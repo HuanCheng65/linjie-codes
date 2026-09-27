@@ -3,7 +3,7 @@
  * 每个玩家输出一串带方向的挥动（dir 0 = 下挥到位，dir 1 = 回程到位）。
  */
 import { type Chart } from '../src/chart';
-import { beatPeriod, beatTime } from '../src/grid';
+import { beatPosition, beatTime, uniformMap, type BeatMap } from '../src/grid';
 import type { SwingDirection } from '../src/detector';
 import { TEST_TRACK_CHART } from '../src/presets';
 
@@ -30,12 +30,53 @@ export class Rng {
 
 export function chartAt(bpm: number): Chart {
   if (bpm === 160) return TEST_TRACK_CHART;
-  const p = 60 / bpm;
-  const endBeat = Math.floor(44 / p);
-  return { ...TEST_TRACK_CHART, grid: { bpm, firstBeat: 0.6 }, endBeat, playUntil: 0.6 + (endBeat + 2) * p };
+  return chartOn(uniformMap(bpm, 0.6, -12, 60));
+}
+
+/** 在给定节拍表上做一张谱面：0.6 秒处是第一声预备拍，之后 4 拍预备、8 拍热身，一直到 44 秒。 */
+export function chartOn(map: BeatMap, extra: Partial<Chart> = {}): Chart {
+  const b0 = Math.round(beatPosition(map, 0.6));
+  const endBeat = Math.floor(beatPosition(map, 44));
+  return {
+    grid: map,
+    startBeat: b0 + 4,
+    endBeat,
+    playFrom: 0,
+    playUntil: beatTime(map, endBeat + 2),
+    sections: [{ beat: b0 + 4, color: 'teal' }],
+    ...extra,
+  };
+}
+
+/** 前半段 128 BPM，后半段突然提速到 140 BPM。 */
+export function tempoChangeMap(): BeatMap {
+  const times: number[] = [];
+  let t = 0.6 - 12 * (60 / 128);
+  while (t < 22) {
+    times.push(t);
+    t += 60 / 128;
+  }
+  while (t < 60) {
+    times.push(t);
+    t += 60 / 140;
+  }
+  return { times };
+}
+
+/** 速度从 100 BPM 慢慢漂到 112 BPM（现场录音那种）。 */
+export function driftMap(): BeatMap {
+  const times: number[] = [];
+  let t = 0.6 - 12 * 0.6;
+  for (let i = 0; t < 60; i++) {
+    times.push(t);
+    const bpm = 100 + 12 * Math.min(1, Math.max(0, (t - 0.6) / 44));
+    t += 60 / bpm;
+  }
+  return { times };
 }
 
 const bt = (c: Chart, b: number) => beatTime(c.grid, b);
+const periodOf = (c: Chart, b: number) => bt(c, b + 1) - bt(c, b);
 const beats = (c: Chart, step = 1) => {
   const out: number[] = [];
   for (let b = c.startBeat; b <= c.endBeat; b += step) out.push(b);
@@ -61,10 +102,10 @@ export const players: Record<string, Player> = {
   点屏幕每拍: (c, r) => beats(c).map((b) => ({ t: bt(c, b) + 0.03 + r.gauss() * 0.025, dir: 0 as const })),
   /** 前段每拍，中段加速到半拍一个来回，后段放慢到两拍，另有 8% 与节奏无关的花样动作。 */
   会打的: (c, r) => {
-    const p = beatPeriod(c.grid);
     const out: Hit[] = [];
     const n = c.endBeat - c.startBeat;
     for (const b of beats(c)) {
+      const p = periodOf(c, b);
       const k = (b - c.startBeat) / n;
       const t0 = bt(c, b) + 0.04;
       const j = () => r.gauss() * 0.025;
@@ -86,11 +127,17 @@ export const players: Record<string, Player> = {
   乱挥慢: (c, r) => flail(c, r, 0.25, 0.6),
   乱挥快: (c, r) => flail(c, r, 0.16, 0.32),
   很稳但快7: (c, r) => {
-    const p = beatPeriod(c.grid) / 1.07;
+    const p = periodOf(c, c.startBeat) / 1.07;
     const downs: number[] = [];
     for (let t = bt(c, c.startBeat); t < bt(c, c.endBeat); t += p) downs.push(t);
     return backAndForth(downs, r, 0.02, 0);
   },
+  /** 点屏幕，按 shuffle 的八分音符点：每拍的开头和 2/3 处。 */
+  点屏幕shuffle: (c, r) =>
+    beats(c).flatMap((b) => [
+      { t: bt(c, b) + 0.03 + r.gauss() * 0.02, dir: 0 as const },
+      { t: bt(c, b) + (2 / 3) * periodOf(c, b) + 0.03 + r.gauss() * 0.02, dir: 0 as const },
+    ]),
   打一半不打了: (c, r) => {
     const mid = (c.startBeat + c.endBeat) / 2;
     return backAndForth(beats(c).filter((b) => b < mid).map((b) => bt(c, b)), r, 0.03, 0.05);

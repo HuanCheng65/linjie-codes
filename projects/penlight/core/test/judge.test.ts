@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { chartFromSegment } from '../src/chart';
-import { beatTime } from '../src/grid';
+import { chartFromSelection } from '../src/chart';
+import { beatPosition, beatTime, uniformMap } from '../src/grid';
 import { Judge, hitScore } from '../src/judge';
 import { TEST_TRACK_CHART } from '../src/presets';
-import { chartAt, players, Rng, type Player } from './players';
+import { chartAt, chartOn, driftMap, players, Rng, tempoChangeMap, type Player } from './players';
 
 function play(bpm: number, player: Player, seed: number) {
   const chart = chartAt(bpm);
@@ -41,6 +41,10 @@ describe.each([90, 120, 160, 190])('%i BPM 下的各类玩家', (bpm) => {
     expect(scores['很稳但快7']).toBeLessThan(35);
   });
 
+  it('shuffle 节奏的八分音符也能认出来', () => {
+    expect(scores['点屏幕shuffle']).toBeGreaterThan(70);
+  });
+
   it('一小节一下和中途停下都只有部分分', () => {
     expect(scores['每小节一下']).toBeGreaterThan(30);
     expect(scores['每小节一下']).toBeLessThan(60);
@@ -56,6 +60,35 @@ describe('Judge 细节', () => {
   it('W = min(100 ms, 0.25 拍)', () => {
     expect(new Judge(chart).window).toBeCloseTo(0.09375, 9);
     expect(new Judge(chartAt(90)).window).toBeCloseTo(0.1, 9);
+  });
+
+  it('变速的歌：跟着实际拍子挥照样拿高分，乱挥照样拿不到', () => {
+    for (const map of [tempoChangeMap(), driftMap()]) {
+      const c = chartOn(map);
+      let good = 0;
+      let bad = 0;
+      for (let i = 0; i < 8; i++) {
+        for (const [name, acc] of [['新手每拍', 'good'], ['乱挥快', 'bad']] as const) {
+          const j = new Judge(c);
+          for (const h of players[name]!(c, new Rng(77 + i))) j.swing(h.t, h.dir);
+          if (acc === 'good') good += j.result().score / 8;
+          else bad += j.result().score / 8;
+        }
+      }
+      expect(good).toBeGreaterThan(75);
+      expect(bad).toBeLessThan(15);
+    }
+  });
+
+  it('没声音的拍子不计入参与度', () => {
+    const map = uniformMap(120, 0.6, -12, 60);
+    const b0 = Math.round(beatPosition(map, 0.6));
+    const restBeats: number[] = [];
+    for (let b = b0 + 40; b < b0 + 56; b++) restBeats.push(b);
+    const c = chartOn(map, { restBeats });
+    const j = new Judge(c);
+    for (let b = c.startBeat; b <= c.endBeat; b++) if (!restBeats.includes(b)) j.swing(beatTime(map, b), 0);
+    expect(j.result().participation).toBeCloseTo(1, 6);
   });
 
   it('完美的每拍一下得满分，习惯性偏晚不扣分', () => {
@@ -102,24 +135,38 @@ describe('Judge 细节', () => {
   });
 });
 
-describe('chartFromSegment', () => {
-  it('留出预备拍，之后每 16 拍换一次颜色', () => {
-    const g = { bpm: 120, firstBeat: 0.25 };
-    const c = chartFromSegment({ grid: g, from: 30, length: 60, duration: 200 });
-    expect(beatTime(g, c.startBeat)).toBeGreaterThanOrEqual(30 + 0.5 + 4 * 0.5);
-    expect(beatTime(g, c.endBeat)).toBeLessThanOrEqual(90);
+describe('chartFromSelection', () => {
+  const map = uniformMap(120, 0.25, -12, 212);
+
+  it('预备和热身放在选段开头之前，选中的部分全部计分', () => {
+    const c = chartFromSelection({ map, start: 30.25, end: 90.25, duration: 200 });
+    const j = new Judge(c);
+    expect(beatTime(map, j.playStart)).toBeCloseTo(30.25, 6);
+    expect(beatTime(map, c.startBeat)).toBeCloseTo(30.25 - 8 * 0.5, 6);
+    expect(c.playFrom).toBeLessThan(beatTime(map, c.startBeat - 4));
+    expect(beatTime(map, c.endBeat)).toBeCloseTo(90.25, 6);
+    expect(c.playUntil).toBeCloseTo(90.25 + 1.2, 6);
+    expect(c.fadeOut).toBeCloseTo(1, 6);
+    expect(c.clickBeats).toEqual([]);
+  });
+
+  it('开头太靠前时，音频之前的预备拍用节拍器补上', () => {
+    const c = chartFromSelection({ map, start: 2.25, end: 60.25, duration: 200 });
+    expect(c.playFrom).toBeLessThan(0);
+    expect(c.clickBeats!.length).toBeGreaterThan(0);
+    for (const b of c.clickBeats!) expect(beatTime(map, b)).toBeLessThan(0.15);
+  });
+
+  it('选到歌曲结尾时播放到结尾', () => {
+    const c = chartFromSelection({ map, start: 150.25, end: 200, duration: 200 });
+    expect(c.playUntil).toBe(200);
+    expect(beatTime(map, c.endBeat)).toBeLessThanOrEqual(199.7);
+  });
+
+  it('段落交界换颜色，热身是青色', () => {
+    const c = chartFromSelection({ map, start: 30.25, end: 90.25, duration: 200 });
     expect(c.sections[0]!.color).toBe('teal');
     expect(c.sections[1]!.beat).toBe(c.startBeat + 8);
     expect(c.sections[2]!.beat - c.sections[1]!.beat).toBe(16);
-  });
-});
-
-describe('热身偏移', () => {
-  it('热身挥得很散时不给偏移估计', () => {
-    const chart = TEST_TRACK_CHART;
-    const judge = new Judge(chart);
-    const r = new Rng(5);
-    for (let b = chart.startBeat; b < chart.startBeat + 8; b++) judge.swing(beatTime(chart.grid, b) + r.next() * 0.375, 0);
-    expect(judge.warmupOffset()).toBeNull();
   });
 });

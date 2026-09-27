@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { beatPosition, replay, type Recording } from '../src/index';
+import { beatPosition, normalizeChart, replay, type Recording } from '../src/index';
 
 const load = (name: string) =>
   JSON.parse(readFileSync(join(import.meta.dirname, '..', 'recordings', name), 'utf8')) as Recording;
@@ -9,6 +9,7 @@ const load = (name: string) =>
 /** 真机录制：Android + Edge，110 BPM，正常每拍挥（下挥有力、回程较慢）。 */
 describe('真机录制 android-edge-110bpm-normal', () => {
   const rec = load('android-edge-110bpm-normal.json');
+  const chart = normalizeChart(rec.chart);
 
   it('陀螺仪：每一拍恰好检测到一次下挥，得分在 90 以上', () => {
     const r = replay(rec);
@@ -16,10 +17,10 @@ describe('真机录制 android-edge-110bpm-normal', () => {
     const downs = r.swings.filter((s) => s.dir === 0);
     const perBeat = new Map<number, number>();
     for (const s of downs) {
-      const b = Math.round(beatPosition(rec.chart.grid, s.t) - 0.065);
+      const b = Math.round(beatPosition(chart.grid, s.t) - 0.065);
       perBeat.set(b, (perBeat.get(b) ?? 0) + 1);
     }
-    for (let b = rec.chart.startBeat; b <= rec.chart.endBeat; b++) expect(perBeat.get(b)).toBe(1);
+    for (let b = chart.startBeat; b <= chart.endBeat; b++) expect(perBeat.get(b)).toBe(1);
     expect(r.result.score).toBeGreaterThan(90);
     expect(r.result.strays).toBe(0);
   });

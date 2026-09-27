@@ -6,7 +6,8 @@
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beatPosition, replay, type Recording } from '../src/index';
+import Bowser from 'bowser';
+import { beatPosition, normalizeChart, replay, type Recording } from '../src/index';
 
 const args = process.argv.slice(2);
 const csv = args.includes('--csv');
@@ -33,7 +34,10 @@ for (const file of files) {
   const f = (x: number) => x.toFixed(1);
   console.log(`\n${file}`);
   console.log(`  ${rec.song.title} · ${rec.inputMode} · 来源 ${r.source ?? '—'} · 灵敏度 ${sensitivity ?? rec.sensitivity} · 标签 ${rec.tags.join('、') || '—'}`);
-  console.log(`  ${rec.userAgent}`);
+  const ua = Bowser.parse(rec.userAgent);
+  const model = rec.device?.model || ua.platform.model || ua.platform.type || '未知设备';
+  const screen = rec.device ? ` · 屏幕 ${rec.device.screen.width}×${rec.device.screen.height}@${rec.device.screen.dpr}` : '';
+  console.log(`  ${model} · ${ua.os.name ?? ''} ${ua.os.version ?? ''} · ${ua.browser.name ?? ''} ${ua.browser.version ?? ''}${screen}`);
   console.log(
     `  现在 ${f(r.result.score)} 分（同步 ${f(r.result.sync * 100)}%，参与 ${f(r.result.participation * 100)}%，命中 ${r.result.hits}，乱挥 ${r.result.strays}，中性 ${r.result.neutral}）` +
       (was ? `  录制时 ${f(was.score)} 分` : ''),
@@ -43,7 +47,7 @@ for (const file of files) {
 
   if (csv) {
     const lines = ['song_time,dir,strength,beat_position'];
-    for (const s of r.swings) lines.push(`${s.t.toFixed(4)},${s.dir},${s.strength.toFixed(1)},${beatPosition(rec.chart.grid, s.t).toFixed(3)}`);
+    for (const s of r.swings) lines.push(`${s.t.toFixed(4)},${s.dir},${s.strength.toFixed(1)},${beatPosition(normalizeChart(rec.chart).grid, s.t).toFixed(3)}`);
     writeFileSync(file.replace(/\.json$/, '.swings.csv'), lines.join('\n'));
   }
 }

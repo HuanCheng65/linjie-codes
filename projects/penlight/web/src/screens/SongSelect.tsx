@@ -1,8 +1,9 @@
 import {
-  chartFromSegment,
+  averageBpm,
   TEST_TRACK_BPM,
   TEST_TRACK_CHART,
   TEST_TRACK_DURATION,
+  tempoSections,
 } from '@linjie/penlight-core';
 import { AudioWaveform, Check, FileAudio, Music2, Play, SlidersHorizontal, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -15,13 +16,13 @@ import { Segmented } from '../components/Segmented';
 import { SongCard } from '../components/SongCard';
 import { Spinner } from '../components/Spinner';
 import { startGame } from '../game/start';
-import { AnalyzeError, analyzeFile, gridOf, type AnalyzeStage } from '../lib/analyze';
+import { AnalyzeError, analyzeFile, type AnalyzeStage } from '../lib/analyze';
+import { applyFullAnalysis, songForUpload, uploadFromAnalysis } from '../lib/upload';
 import { formatBpm, formatTime } from '../lib/format';
 import { testTrackBuffer } from '../lib/testTrack';
 import {
   bestScore,
   navigate,
-  SEGMENT_LENGTH,
   setInputMode,
   setUpload,
   useStore,
@@ -32,7 +33,7 @@ import styles from './SongSelect.module.css';
 
 const STAGES: { key: AnalyzeStage; label: string }[] = [
   { key: 'decode', label: '读取音频' },
-  { key: 'prepare', label: '截取前 90 秒' },
+  { key: 'prepare', label: '整理音频' },
   { key: 'detect', label: '识别节拍' },
   { key: 'fit', label: '拟合节拍网格' },
 ];
@@ -77,13 +78,19 @@ export function SongSelect() {
     if (!file) return;
     setAnalysis({ state: 'running', stage: 'decode', name: file.name });
     try {
-      const song = await analyzeFile(file, (stage) => setAnalysis({ state: 'running', stage, name: file.name }));
-      setUpload({
-        song,
-        grid: gridOf(song.detected),
-        segmentFrom: 0,
-        segmentLength: Math.min(SEGMENT_LENGTH, song.duration),
-      });
+      const result = await analyzeFile(file, (stage) => setAnalysis({ state: 'running', stage, name: file.name }));
+      setUpload(uploadFromAnalysis(result));
+      // 整首歌在后台接着分析，完成后替换节拍表（用户改过就先放着）
+      result.full?.then(
+        (map) => {
+          const u = useStore.getState().upload;
+          if (u?.song.hash === result.song.hash) setUpload(applyFullAnalysis(u, map));
+        },
+        () => {
+          const u = useStore.getState().upload;
+          if (u?.song.hash === result.song.hash) setUpload({ ...u, analysis: 'failed' });
+        },
+      );
       setSelected('upload');
       setAnalysis({ state: 'idle' });
       navigate('editor');
@@ -103,17 +110,7 @@ export function SongSelect() {
   const song: Song | null =
     selected === 'test'
       ? test.buffer && { key: 'test', title: '内置测试曲', buffer: test.buffer, chart: TEST_TRACK_CHART }
-      : upload && {
-          key: uploadKey,
-          title: upload.song.title,
-          buffer: upload.song.buffer,
-          chart: chartFromSegment({
-            grid: upload.grid,
-            from: upload.segmentFrom,
-            length: upload.segmentLength,
-            duration: upload.song.duration,
-          }),
-        };
+      : upload && songForUpload(upload);
 
   const start = async () => {
     if (!song) return;
@@ -176,19 +173,21 @@ export function SongSelect() {
                   onSelect={() => setSelected('upload')}
                   meta={
                     <>
-                      <span className="num">{formatBpm(upload.grid.bpm)} BPM</span>
+                      <span className="num">
+                        {tempoSections(upload.map).length > 1 ? '变速' : `${formatBpm(averageBpm(upload.map))} BPM`}
+                      </span>
                       <span className={styles.sep} />
                       <span className="num">
-                        {formatTime(upload.segmentFrom)}–{formatTime(upload.segmentFrom + upload.segmentLength)}
+                        {formatTime(upload.selection.start)}–{formatTime(upload.selection.end)}
                       </span>
                       {uploadBest !== null && <Best score={uploadBest} />}
                     </>
                   }
                   footer={
                     <>
-                      <span>节拍不准？</span>
+                      <span>{upload.analysis === 'partial' ? '后半段还在分析' : '换片段、校对节拍'}</span>
                       <Button size="sm" variant="secondary" icon={SlidersHorizontal} onClick={() => navigate('editor')}>
-                        校对节拍
+                        选段和节拍
                       </Button>
                     </>
                   }
@@ -237,7 +236,7 @@ export function SongSelect() {
                           {state === 'done' ? <Check size={14} strokeWidth={3} /> : state === 'active' ? <Spinner size={14} /> : null}
                         </span>
                         {s.label}
-                        {state === 'active' && s.key === 'detect' && <span className={styles.stageNote}>手机上要十几秒</span>}
+                        {state === 'active' && s.key === 'detect' && <span className={styles.stageNote}>先分析前 90 秒</span>}
                       </li>
                     );
                   })}
@@ -256,7 +255,7 @@ export function SongSelect() {
                   <Upload size={20} strokeWidth={2} aria-hidden />
                 </span>
                 <span className={styles.dropTitle}>{upload ? '换一首歌' : '上传歌曲'}</span>
-                <span className={styles.dropHint}>mp3、m4a、wav 都行，自动识别 BPM</span>
+                <span className={styles.dropHint}>mp3、m4a、wav 都行，6 分钟以内，自动识别节拍</span>
               </motion.div>
             )}
           </AnimatePresence>

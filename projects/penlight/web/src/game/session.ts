@@ -9,10 +9,12 @@ import {
   type GameResult,
   type LiveVerdict,
   type PenlightColor,
+  type DeviceInfo,
   type Recording,
   type SwingDirection,
 } from '@linjie/penlight-core';
 import { audioContext, playBuffer, SongClock, type Playback } from '../lib/audio';
+import { deviceInfo } from '../lib/device';
 import { MotionSource } from '../lib/motion';
 import type { InputMode, Song } from '../store';
 
@@ -47,6 +49,7 @@ export class GameSession {
   private ended = false;
   private readonly frames: (number | null)[][] = [];
   private readonly taps: [number, number][] = [];
+  private device: DeviceInfo | undefined;
 
   constructor(
     private readonly song: Song,
@@ -59,7 +62,13 @@ export class GameSession {
   start(): void {
     const { chart, buffer } = this.song;
     const ctx = audioContext();
-    this.playback = playBuffer(buffer, chart.playFrom, chart.playUntil, 0.25);
+    void deviceInfo().then((d) => (this.device = d));
+    // 音频开始之前的预备拍和热身拍用节拍器数，每 4 拍第一下音高更高
+    const clicks = (chart.clickBeats ?? []).map((b) => ({
+      time: beatTime(chart.grid, b),
+      accent: (((b - chart.startBeat) % 4) + 4) % 4 === 0,
+    }));
+    this.playback = playBuffer(buffer, chart.playFrom, chart.playUntil, { delay: 0.25, fadeOut: chart.fadeOut, clicks });
     this.playback.onended = () => this.finish();
     this.clock = new SongClock(ctx, this.playback);
 
@@ -133,9 +142,10 @@ export class GameSession {
   private recording(result: GameResult): Recording {
     return {
       format: 'penlight-recording',
-      version: 1,
+      version: 2,
       createdAt: new Date().toISOString(),
       userAgent: navigator.userAgent,
+      device: this.device,
       inputMode: this.options.inputMode,
       sensitivity: this.options.sensitivity,
       source: this.detector.kind,
