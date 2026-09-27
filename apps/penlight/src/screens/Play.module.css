@@ -1,0 +1,240 @@
+.frame {
+  z-index: 10;
+}
+
+.play {
+  --ink: #0b0b10;
+  --ink-2: rgba(11, 11, 16, 0.62);
+  --ink-soft: rgba(11, 11, 16, 0.12);
+  --ink-softer: rgba(11, 11, 16, 0.06);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--stick);
+  color: var(--ink);
+  transition: background-color 700ms var(--ease-in-out);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overflow: hidden;
+}
+
+.play[data-ink='light'] {
+  --ink: #ffffff;
+  --ink-2: rgba(255, 255, 255, 0.74);
+  --ink-soft: rgba(255, 255, 255, 0.18);
+  --ink-softer: rgba(255, 255, 255, 0.08);
+}
+
+/* 中间亮、四周略暗，像发光的面板而不是一块平涂色 */
+.sheen {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 70% at 50% 42%, rgba(255, 255, 255, 0.22), transparent 70%),
+    radial-gradient(160% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.16));
+  pointer-events: none;
+}
+
+.flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.top {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-4) 0;
+}
+
+.exit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  min-width: var(--control-md);
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-soft);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.exit[data-confirm] {
+  background: var(--ink);
+  color: var(--stick);
+}
+
+.exitLabel {
+  display: inline-block;
+  overflow: hidden;
+}
+
+.time {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--ink-softer);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.center {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: 0 var(--gutter);
+  text-align: center;
+}
+
+.phase {
+  font-size: var(--text-md);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+
+.stageArea {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: min(44vh, 280px);
+}
+
+.stageArea > * {
+  grid-area: 1 / 1;
+}
+
+.lead {
+  max-width: 16em;
+  font-size: var(--text-xl);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.big {
+  font-size: clamp(120px, 42vw, 220px);
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+}
+
+.placeholder {
+  display: block;
+  width: 0.5em;
+  height: 0.07em;
+  margin: 0.4em 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink-soft);
+}
+
+.stability,
+.calibration {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.caption {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.dots {
+  display: grid;
+  grid-template-columns: repeat(8, 18px);
+  gap: 12px;
+}
+
+.dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ink-soft) inset;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.dot[data-state='now'] {
+  box-shadow: 0 0 0 2px var(--ink) inset;
+}
+
+.dot[data-state='missed'] {
+  box-shadow: 0 0 0 2px var(--ink-2) inset;
+  opacity: 0.5;
+}
+
+.dot[data-state='hit'] {
+  background: var(--ink);
+  box-shadow: none;
+}
+
+.done {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.pillSlot {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--stick);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.bottom {
+  position: relative;
+  z-index: 2;
+  padding: 0 var(--space-5) calc(env(safe-area-inset-bottom) + var(--space-6));
+}
+
+.track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-soft);
+  overflow: hidden;
+}
+
+.bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+}

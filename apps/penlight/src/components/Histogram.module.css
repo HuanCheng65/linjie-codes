@@ -1,0 +1,110 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.caption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 20px;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.caption b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.window {
+  fill: var(--accent-soft);
+}
+
+.windowEdge {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}
+
+.windowLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--accent-text);
+}
+
+.hitArea {
+  fill: transparent;
+}
+
+.hits {
+  fill: var(--accent);
+}
+
+.others {
+  fill: var(--chart-muted);
+}
+
+.bin {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.svg:has(.bin[data-active]) .bin:not([data-active]) {
+  opacity: 0.45;
+}
+
+.axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.zero {
+  stroke: var(--text-3);
+  stroke-width: 1;
+}
+
+.tick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text-3);
+}
+
+.dir {
+  font-size: 10px;
+  fill: var(--text-3);
+}
+
+.legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatchHit,
+.swatchOther {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.swatchOther {
+  background: var(--chart-muted);
+}

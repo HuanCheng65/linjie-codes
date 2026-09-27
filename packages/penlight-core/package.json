@@ -1,0 +1,18 @@
+{
+  "name": "@linjie/penlight-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "应援棒游戏的纯逻辑部分：挥动检测、节拍网格、判定与计分。手机端和之后的服务器共用。",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

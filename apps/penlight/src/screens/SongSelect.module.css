@@ -1,0 +1,178 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-3);
+  opacity: 0.6;
+}
+
+.chords {
+  letter-spacing: 0.04em;
+}
+
+.best {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.drop {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 128px;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  box-shadow: none;
+  outline: 1.5px dashed var(--border-strong);
+  outline-offset: -1.5px;
+  overflow: hidden;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    outline-color var(--dur-base) var(--ease-out);
+}
+
+.drop:hover:not(:disabled) {
+  background: var(--surface);
+  outline-color: var(--accent);
+}
+
+.drop[data-busy] {
+  background: var(--surface);
+  outline-style: solid;
+  outline-color: var(--border);
+  cursor: progress;
+}
+
+.dropIdle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dropIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-2);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.dropTitle {
+  font-weight: 600;
+  font-size: var(--text-md);
+}
+
+.dropHint {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.fileName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.fileName span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.stages li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.stages li[data-state='active'] {
+  color: var(--text);
+}
+
+.stages li[data-state='done'] {
+  color: var(--text-2);
+}
+
+.stageIcon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--border-strong) inset;
+  color: var(--accent-text);
+}
+
+li[data-state='done'] .stageIcon {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: none;
+}
+
+li[data-state='active'] .stageIcon {
+  box-shadow: none;
+}
+
+.stageNote {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.shimmer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: sweep 1.3s var(--ease-in-out) infinite;
+}
+
+@keyframes sweep {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.tune {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-2));
+}

@@ -1,0 +1,120 @@
+.song {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--space-1);
+}
+
+.songTitle {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.tempo {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.factor {
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border) inset;
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.factor:hover {
+  background: var(--surface-3);
+}
+
+.bpm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.bpmValue {
+  font-size: var(--text-3xl);
+  font-weight: 600;
+}
+
+.bpmUnit {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+
+.nudge {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 1.1fr) 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border) inset;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.step:hover {
+  background: var(--surface-3);
+}
+
+.shift {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+
+.shiftValue {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+
+.shiftUnit {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.previewButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.hint {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}

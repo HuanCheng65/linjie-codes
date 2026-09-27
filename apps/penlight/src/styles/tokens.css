@@ -1,0 +1,162 @@
+/*
+ * 设计 token。组件里只用这些变量，不直接写颜色、字号、圆角和间距。
+ * 默认深色；跟随系统，或由 <html data-theme="light|dark"> 强制指定。
+ */
+:root {
+  /* 间距：4 的倍数 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --gutter: 20px;
+
+  /* 圆角 */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  /* 字体 */
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC',
+    'MiSans', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, 'PingFang SC', monospace;
+
+  /* 字号 */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+  --text-2xl: 34px;
+  --text-3xl: 44px;
+  --text-display: 88px;
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+
+  /* 尺寸 */
+  --control-sm: 36px;
+  --control-md: 44px;
+  --control-lg: 54px;
+  --header-height: 56px;
+  --content-max: 480px;
+
+  /* 动效 */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 480ms;
+
+  /* 应援棒色 */
+  --stick-teal: #39c5bb;
+  --stick-blue: #3f7cff;
+  --stick-purple: #9d6bff;
+  --stick-pink: #ff5da2;
+  --stick-red: #ff4d5e;
+  --stick-orange: #ff8a3d;
+  --stick-yellow: #ffd23f;
+  --stick-green: #3ddc84;
+  --stick-white: #f4f4f6;
+
+  /* 深色主题 */
+  color-scheme: dark;
+  --bg: #0a0a0f;
+  --bg-glow: rgba(57, 197, 187, 0.1);
+  --surface: #14141b;
+  --surface-2: #1c1c25;
+  --surface-3: #262631;
+  --surface-hover: #20202a;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #f2f2f5;
+  --text-2: rgba(242, 242, 245, 0.66);
+  --text-3: rgba(242, 242, 245, 0.42);
+  --accent: #39c5bb;
+  --accent-strong: #5fd8cf;
+  --accent-ink: #03211e;
+  --accent-text: #62dbd2;
+  --accent-soft: rgba(57, 197, 187, 0.14);
+  --success: #4ade80;
+  --warning: #ffc14d;
+  --warning-soft: rgba(255, 193, 77, 0.12);
+  --danger: #ff6b7a;
+  --danger-soft: rgba(255, 107, 122, 0.12);
+  --scrim: rgba(5, 5, 8, 0.6);
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-muted: #4a4a58;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: #f4f4f0;
+    --bg-glow: rgba(57, 197, 187, 0.16);
+    --surface: #ffffff;
+    --surface-2: #efefea;
+    --surface-3: #e4e4de;
+    --surface-hover: #f8f8f5;
+    --border: rgba(12, 12, 24, 0.08);
+    --border-strong: rgba(12, 12, 24, 0.16);
+    --text: #131318;
+    --text-2: rgba(19, 19, 24, 0.64);
+    --text-3: rgba(19, 19, 24, 0.42);
+    --accent: #39c5bb;
+    --accent-strong: #2bb3a9;
+    --accent-ink: #03211e;
+    --accent-text: #0b8279;
+    --accent-soft: rgba(57, 197, 187, 0.16);
+    --success: #16a34a;
+    --warning: #b7791f;
+    --warning-soft: rgba(245, 170, 40, 0.14);
+    --danger: #d9344a;
+    --danger-soft: rgba(217, 52, 74, 0.1);
+    --scrim: rgba(20, 20, 28, 0.32);
+    --shadow-1: 0 1px 2px rgba(18, 18, 30, 0.06);
+    --shadow-2: 0 14px 36px -12px rgba(18, 18, 30, 0.18);
+    --chart-grid: rgba(12, 12, 24, 0.08);
+    --chart-muted: #c3c3cc;
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f4f0;
+  --bg-glow: rgba(57, 197, 187, 0.16);
+  --surface: #ffffff;
+  --surface-2: #efefea;
+  --surface-3: #e4e4de;
+  --surface-hover: #f8f8f5;
+  --border: rgba(12, 12, 24, 0.08);
+  --border-strong: rgba(12, 12, 24, 0.16);
+  --text: #131318;
+  --text-2: rgba(19, 19, 24, 0.64);
+  --text-3: rgba(19, 19, 24, 0.42);
+  --accent: #39c5bb;
+  --accent-strong: #2bb3a9;
+  --accent-ink: #03211e;
+  --accent-text: #0b8279;
+  --accent-soft: rgba(57, 197, 187, 0.16);
+  --success: #16a34a;
+  --warning: #b7791f;
+  --warning-soft: rgba(245, 170, 40, 0.14);
+  --danger: #d9344a;
+  --danger-soft: rgba(217, 52, 74, 0.1);
+  --scrim: rgba(20, 20, 28, 0.32);
+  --shadow-1: 0 1px 2px rgba(18, 18, 30, 0.06);
+  --shadow-2: 0 14px 36px -12px rgba(18, 18, 30, 0.18);
+  --chart-grid: rgba(12, 12, 24, 0.08);
+  --chart-muted: #c3c3cc;
+}
