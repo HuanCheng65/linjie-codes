@@ -4,3 +4,4 @@ export * from './chart';
 export * from './judge';
 export * from './fit';
 export * from './presets';
+export * from './recording';

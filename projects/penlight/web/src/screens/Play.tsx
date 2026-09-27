@@ -1,4 +1,4 @@
-import { PENLIGHT_COLORS, type Verdict } from '@linjie/penlight-core';
+import { PENLIGHT_COLORS, type LiveVerdict } from '@linjie/penlight-core';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
@@ -15,8 +15,8 @@ import styles from './Play.module.css';
 const PHASE_LABEL: Record<Phase | 'done', string> = {
   lead: '准备',
   countin: '预备',
-  calibration: '校准中',
-  play: '跟着拍子挥',
+  warmup: '热身 · 不计分',
+  play: '跟着节奏挥',
   outro: '收尾',
   done: '完成',
 };
@@ -55,7 +55,7 @@ export function Play() {
       });
     };
 
-    const onSwing = (v: Verdict) => {
+    const onSwing = (v: LiveVerdict) => {
       const session = sessionRef.current;
       if (!session) return;
       switch (v.kind) {
@@ -66,12 +66,15 @@ export function Play() {
             easing: 'cubic-bezier(0.2, 0, 0, 1)',
           });
           break;
-        case 'calibration':
-          flash(v.valid ? 0.55 : 0.3, 240);
-          if (v.valid) setCalibSlots(new Set(session.judge.calibratedBeatSlots));
+        case 'warmup':
+          flash(v.onBeat ? 0.55 : 0.3, 240);
+          if (v.onBeat) setCalibSlots(new Set(session.judge.warmupBeatSlots));
           break;
-        default:
+        case 'miss':
           flash(0.3, 220);
+          break;
+        case 'ignored':
+          flash(0.2, 200);
       }
       setStability(session.judge.stability());
     };
@@ -81,8 +84,8 @@ export function Play() {
       inputMode,
       sensitivity,
       onSwing,
-      onEnd: (result) => {
-        finishGame(result);
+      onEnd: (result, recording) => {
+        finishGame(result, recording);
         setPhase('done');
         endTimer = window.setTimeout(() => replace('result'), 1100);
       },
@@ -105,13 +108,13 @@ export function Play() {
       }
       if (f.phase !== last?.phase) {
         setPhase((p) => (p === 'done' ? p : f.phase));
-        if (last?.phase === 'calibration' && f.phase !== 'calibration') {
-          const r = session.judge;
-          setCalibration({ offsetMs: (r.offset ?? 0) * 1000, fallback: r.calibrationFallback });
+        if (last?.phase === 'warmup' && f.phase !== 'warmup') {
+          const offset = session.judge.warmupOffset();
+          setCalibration({ offsetMs: (offset ?? 0) * 1000, fallback: offset === null });
         }
       }
       if (f.countIn !== last?.countIn) setCountIn(f.countIn);
-      if (f.calibrationBeat !== last?.calibrationBeat) setCalibBeat(f.calibrationBeat);
+      if (f.warmupBeat !== last?.warmupBeat) setCalibBeat(f.warmupBeat);
       if (f.color !== last?.color) setColor(f.color);
       last = f;
     };
@@ -255,7 +258,7 @@ export function Play() {
                   {countIn}
                 </motion.div>
               )}
-              {phase === 'calibration' && (
+              {phase === 'warmup' && (
                 <motion.div key="calib" className={styles.calibration} {...fadeScale}>
                   <div className={styles.dots}>
                     {Array.from({ length: 8 }, (_, i) => (
@@ -268,7 +271,7 @@ export function Play() {
                       />
                     ))}
                   </div>
-                  <p className={styles.caption}>按你自己的习惯挥 8 下</p>
+                  <p className={styles.caption}>先跟着挥 8 拍，快慢、动作随你</p>
                 </motion.div>
               )}
               {(phase === 'play' || phase === 'outro') && (
@@ -297,12 +300,11 @@ export function Play() {
                   exit={{ opacity: 0, y: -6, scale: 0.96 }}
                   transition={spring}
                 >
-                  {calibration.fallback ? (
-                    '校准段挥得太少，偏移按 0 计'
-                  ) : (
-                    <>
-                      个人偏移 <span className="num">{signedMs(calibration.offsetMs)} ms</span>
-                    </>
+                  开始计分
+                  {!calibration.fallback && (
+                    <span className={styles.pillSub}>
+                      · 偏移 <span className="num">{signedMs(calibration.offsetMs)} ms</span>
+                    </span>
                   )}
                 </motion.span>
               )}

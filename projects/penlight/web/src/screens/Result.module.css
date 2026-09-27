@@ -175,9 +175,52 @@
 }
 
 .note {
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4) calc(var(--space-4) + 1.1em);
   font-size: var(--text-xs);
   color: var(--text-3);
+}
+
+.exportHint {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border) inset;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.tag[data-on] {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent) inset;
+  color: var(--accent-text);
+}
+
+.tagCheck {
+  display: inline-flex;
+  overflow: hidden;
 }
 
 .actions {

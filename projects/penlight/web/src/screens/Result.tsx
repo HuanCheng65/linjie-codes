@@ -1,16 +1,16 @@
-import type { GameResult } from '@linjie/penlight-core';
-import { ChevronDown, Hand, ListMusic, RotateCcw, Trophy, Waves } from 'lucide-react';
+import { Check, ChevronDown, Hand, ListMusic, RotateCcw, Share2, Trophy, Waves } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
+import { DensityStrip, summarizeDensity } from '../components/DensityStrip';
 import { Histogram } from '../components/Histogram';
 import { Reveal, Screen } from '../components/Screen';
 import { startGame } from '../game/start';
-import { signedMs } from '../lib/format';
-import { backTo, useStore } from '../store';
+import { exportRecording } from '../lib/exportRecording';
+import { backTo, showToast, useStore } from '../store';
 import styles from './Result.module.css';
 
 /** 结算页的一行小字。 */
@@ -22,8 +22,10 @@ function tagline(score: number): string {
   return '没关系，打 call 最重要的是开心。';
 }
 
+const EXPORT_TAGS = ['正常挥', '有快有慢', '换了动作', '走路', '故意乱挥'];
+
 const fmtScore = (v: number) => v.toFixed(1);
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+const pct = (v: number) => `${Math.round(v * 100)}`;
 
 export function Result() {
   const last = useStore((s) => s.lastResult);
@@ -31,10 +33,12 @@ export function Result() {
   const nickname = useStore((s) => s.nickname);
   const [details, setDetails] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   if (!last) return null;
   const r = last.result;
-  const isBest = last.previousBest === null ? r.score > 0 : r.score > last.previousBest;
+  const isBest = last.previousBest === null ? r.score >= 1 : r.score > last.previousBest;
 
   const again = async () => {
     if (!current) return;
@@ -42,6 +46,20 @@ export function Result() {
     await startGame(current, { replace: true });
     setStarting(false);
   };
+
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      const how = await exportRecording(last.recording, tags);
+      if (how === 'downloaded') showToast('已下载，把文件发给开发者就行');
+    } catch {
+      showToast('导出失败，换个浏览器试试');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const toggleTag = (tag: string) => setTags((t) => (t.includes(tag) ? t.filter((x) => x !== tag) : [...t, tag]));
 
   return (
     <Screen
@@ -71,7 +89,7 @@ export function Result() {
           </div>
           <div className={styles.chips}>
             <Chip icon={Waves} tone="accent">
-              {r.style === 'half' ? '每两拍一下' : '每拍一下'}
+              {summarizeDensity(r.timeline)}
             </Chip>
             {last.inputMode === 'tap' && <Chip icon={Hand}>点屏幕</Chip>}
             <AnimatePresence>
@@ -105,25 +123,31 @@ export function Result() {
       </Reveal>
 
       <Reveal className={styles.stats}>
-        <Stat label="命中" value={`${r.hits}`} unit={`/ ${r.expected}`} sub={`覆盖率 ${pct(r.coverage)}`} />
+        <Stat label="同步率" value={pct(r.sync)} unit="%" sub={`命中 ${r.hits} 下`} />
+        <Stat label="参与度" value={pct(r.participation)} unit="%" sub={`共 ${r.beats} 拍`} />
         <Stat
           label="平均偏差"
           value={r.meanAbsDeviationMs === null ? '—' : String(Math.round(r.meanAbsDeviationMs))}
           unit="ms"
-          sub={driftText(r)}
+          sub={r.offsetMs === null ? '没有命中' : `习惯${offsetText(r.offsetMs)}`}
         />
-        <Stat label="多余挥动" value={String(r.extras)} unit="下" sub={`系数 ×${r.extrasFactor.toFixed(2)}`} />
         <Stat
-          label="个人偏移"
-          value={signedMs(r.offsetMs)}
-          unit="ms"
-          sub={r.calibrationFallback ? '校准不足，按 0 计' : `校准有效 ${r.calibrationSamples} 下`}
-          warn={r.calibrationFallback}
+          label="乱挥"
+          value={String(r.strays)}
+          unit="下"
+          sub={r.neutral ? `另有回程和花样 ${r.neutral} 下，不扣分` : '越少越好'}
+          warn={r.strays > r.hits * 0.3}
         />
       </Reveal>
 
       <Reveal>
-        <Card title="偏差分布" aside={<span className="num">减去个人偏移后</span>}>
+        <Card title="打法变化" aside={<span>每根柱子是一小节</span>}>
+          <DensityStrip timeline={r.timeline} />
+        </Card>
+      </Reveal>
+
+      <Reveal>
+        <Card title="偏差分布" aside={<span>相对你自己的平均位置</span>}>
           <Histogram swings={r.swings} windowMs={r.windowMs} beatMs={r.beatMs} />
         </Card>
       </Reveal>
@@ -147,40 +171,78 @@ export function Result() {
               >
                 <dl className={styles.formula}>
                   <div>
-                    <dt>覆盖率</dt>
-                    <dd className="num">{r.coverage.toFixed(3)}</dd>
+                    <dt>同步率</dt>
+                    <dd className="num">{r.sync.toFixed(3)}</dd>
                   </div>
                   <div>
-                    <dt>× 准确度</dt>
-                    <dd className="num">{r.accuracy.toFixed(3)}</dd>
-                  </div>
-                  <div>
-                    <dt>× 多余挥动系数</dt>
-                    <dd className="num">{r.extrasFactor.toFixed(3)}</dd>
+                    <dt>× 参与度</dt>
+                    <dd className="num">{r.participation.toFixed(3)}</dd>
                   </div>
                   <div className={styles.total}>
                     <dt>× 100 =</dt>
                     <dd className="num">{fmtScore(r.score)}</dd>
                   </div>
                 </dl>
-                <p className={styles.note}>
-                  判定窗口 ±<span className="num">{Math.round(r.windowMs)}</span> ms，单次命中得分 1 − (|偏差| / 窗口)
-                  <sup>1.5</sup>，准确度取平均。多余挥动系数 = max(0.5, 1 − 0.5 × 多余 / 应打)。
-                </p>
+                <ul className={styles.note}>
+                  <li>只看每一下落在拍子里的位置，挥多挥少、快慢变化都不影响同步率。</li>
+                  <li>
+                    命中：这一下离你自己的平均位置在 ±<span className="num">{Math.round(r.windowMs)}</span> ms 内，越近得分越高。
+                  </li>
+                  <li>乱挥按 0 分算进同步率；回程和偶尔的花样动作不计分也不扣分。</li>
+                  <li>参与度：挥动间隔在两拍以内算满，四拍以内算一半。</li>
+                </ul>
               </motion.div>
             )}
           </AnimatePresence>
+        </Card>
+      </Reveal>
+
+      <Reveal>
+        <Card title="导出本局数据">
+          <p className={styles.exportHint}>传感器原始数据，发给开发者用来调检测和判定。先标一下这局是什么情况：</p>
+          <div className={styles.tags}>
+            {EXPORT_TAGS.map((tag) => {
+              const on = tags.includes(tag);
+              return (
+                <motion.button
+                  key={tag}
+                  type="button"
+                  className={styles.tag}
+                  data-on={on || undefined}
+                  aria-pressed={on}
+                  onClick={() => toggleTag(tag)}
+                  whileTap={{ scale: 0.94 }}
+                >
+                  <AnimatePresence initial={false}>
+                    {on && (
+                      <motion.span
+                        className={styles.tagCheck}
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{ width: 'auto', opacity: 1 }}
+                        exit={{ width: 0, opacity: 0 }}
+                      >
+                        <Check size={14} strokeWidth={3} aria-hidden />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  {tag}
+                </motion.button>
+              );
+            })}
+          </div>
+          <Button variant="secondary" icon={Share2} loading={exporting} onClick={onExport} block>
+            导出并发送
+          </Button>
         </Card>
       </Reveal>
     </Screen>
   );
 }
 
-function driftText(r: GameResult): string {
-  if (r.meanDeviationMs === null) return '没有命中';
-  const d = Math.round(r.meanDeviationMs);
-  if (Math.abs(d) < 5) return '早晚很均衡';
-  return d > 0 ? `整体偏晚 ${d} ms` : `整体偏早 ${-d} ms`;
+function offsetText(ms: number): string {
+  const r = Math.round(ms);
+  if (Math.abs(r) < 10) return '踩得很准';
+  return r > 0 ? `偏晚 ${r} ms` : `偏早 ${-r} ms`;
 }
 
 function Stat({ label, value, unit, sub, warn }: { label: string; value: string; unit: string; sub: string; warn?: boolean }) {

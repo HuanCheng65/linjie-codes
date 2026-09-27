@@ -1,76 +1,98 @@
 import { describe, expect, it } from 'vitest';
-import { GravityFilter, SwingDetector, thresholdForSensitivity } from '../src/detector';
+import { AxisTracker, gateFor, SwingDetector, type MotionFrame, type Vec3 } from '../src/detector';
 
-/** 以 60 Hz 采样一段信号：在给定时刻叠加一个宽度约 120 ms 的加速度脉冲。 */
-function simulate(peaks: number[], amplitude: number, durationMs: number, noise = 0) {
-  const samples: [number, number][] = [];
-  let seed = 7;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
-  for (let t = 0; t < durationMs; t += 1000 / 60) {
-    let v = Math.abs(rand()) * noise;
-    for (const p of peaks) {
-      const x = (t - p) / 45;
-      v += amplitude * Math.exp(-x * x);
-    }
-    samples.push([t, v]);
+const DT = 1000 / 60;
+
+/** 绕某个轴来回转动：角速度是正弦，过零点就是转向点。 */
+function rotation(axis: Vec3, amp: (t: number) => number, freq: number, ms: number, noise = 0): MotionFrame[] {
+  const frames: MotionFrame[] = [];
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  for (let t = 0; t < ms; t += DT) {
+    const w = amp(t) * Math.sin((2 * Math.PI * freq * t) / 1000);
+    frames.push({
+      t,
+      acc: [0, 0, 0],
+      accG: [0, 9.8, 0],
+      rot: [axis[0] * w + rnd() * noise, axis[1] * w + rnd() * noise, axis[2] * w + rnd() * noise],
+    });
   }
-  return samples;
+  return frames;
 }
 
-describe('SwingDetector', () => {
-  it('maps sensitivity levels to thresholds', () => {
-    expect(thresholdForSensitivity(1)).toBe(22);
-    expect(thresholdForSensitivity(3)).toBe(13);
-    expect(thresholdForSensitivity(5)).toBe(7);
-    expect(thresholdForSensitivity(9)).toBe(7);
+function run(frames: MotionFrame[], level = 3) {
+  const d = new SwingDetector(level);
+  return frames.map((f) => d.push(f)).filter((s) => s !== null);
+}
+
+describe('SwingDetector（陀螺仪）', () => {
+  it('每个转向点记一下，时间准，方向交替', () => {
+    const freq = 160 / 60; // 一拍一个来回
+    const swings = run(rotation([0.6, 0.8, 0], () => 700, freq, 8000, 15));
+    const half = 1000 / freq / 2;
+    expect(swings.length).toBeGreaterThanOrEqual(40);
+    swings.slice(2).forEach((s, i) => {
+      const k = Math.round(s.t / half);
+      expect(Math.abs(s.t - k * half)).toBeLessThan(8);
+      if (i > 0) expect(s.dir).not.toBe(swings[i + 1]!.dir);
+    });
   });
 
-  it('counts each pulse once and reports the peak time', () => {
-    const peaks = Array.from({ length: 20 }, (_, i) => 500 + i * 375);
-    const d = new SwingDetector({ threshold: 13 });
-    const swings = simulate(peaks, 25, 9000, 3)
-      .map(([t, v]) => d.push(t, v))
-      .filter((s) => s !== null);
-    expect(swings).toHaveLength(20);
-    swings.forEach((s, i) => expect(Math.abs(s!.t - peaks[i]!)).toBeLessThan(17));
+  it('快速连续挥动不会被合并成一下', () => {
+    const swings = run(rotation([0, 0, 1], () => 1400, 5.3, 4000, 20));
+    // 5.3 Hz 来回，4 秒约 42 个转向点
+    expect(swings.length).toBeGreaterThan(38);
   });
 
-  it('ignores walking-level motion', () => {
-    const steps = Array.from({ length: 16 }, (_, i) => 300 + i * 550);
-    const d = new SwingDetector({ threshold: 13 });
-    const swings = simulate(steps, 6, 9000, 2)
-      .map(([t, v]) => d.push(t, v))
-      .filter(Boolean);
-    expect(swings).toHaveLength(0);
+  it('走路时的小幅晃动不触发', () => {
+    expect(run(rotation([1, 0, 0], () => 70, 1.8, 8000, 10))).toHaveLength(0);
   });
 
-  it('enforces the minimum interval between swings', () => {
-    const d = new SwingDetector({ threshold: 13 });
-    const swings = simulate([500, 620], 30, 1500)
-      .map(([t, v]) => d.push(t, v))
-      .filter(Boolean);
-    expect(swings).toHaveLength(1);
+  it('挥得很猛时，手的小抖动被自适应门槛滤掉', () => {
+    const frames = rotation([0, 1, 0], (t) => (Math.floor(t / 150) % 2 ? 250 : 900), 3.33, 6000, 10);
+    const swings = run(frames, 5);
+    const strong = swings.filter((s) => s.strength > 600).length;
+    expect(swings.length - strong).toBeLessThan(strong * 0.3);
   });
 
-  it('does not re-trigger on a sustained plateau', () => {
-    const d = new SwingDetector({ threshold: 13 });
-    let count = 0;
-    for (let t = 0; t < 2000; t += 16) if (d.push(t, 30)) count++;
-    expect(count).toBe(1);
+  it('门槛按灵敏度分 5 档', () => {
+    expect(gateFor('gyro', 1)).toBeGreaterThan(gateFor('gyro', 5));
+    expect(gateFor('accel', 3)).toBe(13);
   });
 });
 
-describe('GravityFilter', () => {
-  it('removes a constant gravity vector', () => {
-    const f = new GravityFilter();
-    let last = 0;
-    for (let t = 0; t < 3000; t += 16) last = f.push(t, 0, 9.81, 0.5);
-    expect(last).toBeLessThan(0.01);
+describe('SwingDetector（只有加速度）', () => {
+  it('没有陀螺仪时用加速度的峰值', () => {
+    const frames: MotionFrame[] = [];
+    const freq = 2;
+    for (let t = 0; t < 6000; t += DT) {
+      const a = 25 * Math.cos((2 * Math.PI * freq * t) / 1000);
+      frames.push({ t, acc: [a * 0.8, a * 0.6, 0], accG: null, rot: null });
+    }
+    const d = new SwingDetector(3);
+    const swings = frames.map((f) => d.push(f)).filter((s) => s !== null);
+    expect(d.kind).toBe('accel');
+    expect(swings.length).toBeGreaterThanOrEqual(22);
+    const half = 1000 / freq / 2;
+    swings.slice(2).forEach((s) => expect(Math.abs(s.t - Math.round(s.t / half) * half)).toBeLessThan(17));
   });
+});
 
-  it('passes a sharp swing through', () => {
-    const f = new GravityFilter();
-    for (let t = 0; t < 2000; t += 16) f.push(t, 0, 9.81, 0);
-    expect(f.push(2016, 20, 9.81, 0)).toBeGreaterThan(15);
+describe('AxisTracker', () => {
+  it('找到主要转动轴，投影的正负号保持稳定', () => {
+    const axis: Vec3 = [0, 0.6, 0.8];
+    const tr = new AxisTracker();
+    const signs = new Set<number>();
+    for (let t = 0; t < 5000; t += DT) {
+      const w = 500 * Math.sin((2 * Math.PI * 2 * t) / 1000);
+      const p = tr.push(t, [axis[0] * w, axis[1] * w, axis[2] * w]);
+      if (t > 2000 && Math.abs(w) > 100) {
+        expect(Math.abs(p)).toBeCloseTo(Math.abs(w), 0);
+        signs.add(Math.sign(p) * Math.sign(w));
+      }
+    }
+    expect(signs.size).toBe(1);
+    const [x, y, z] = tr.axis;
+    expect(Math.abs(x * axis[0] + y * axis[1] + z * axis[2])).toBeGreaterThan(0.99);
   });
 });
