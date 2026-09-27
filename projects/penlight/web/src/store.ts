@@ -3,6 +3,7 @@ import {
   type BeatGrid,
   type Chart,
   type GameResult,
+  type Recording,
 } from '@linjie/penlight-core';
 import { create } from 'zustand';
 import type { AnalyzedSong } from './lib/analyze';
@@ -33,6 +34,7 @@ export interface ResultState {
   songTitle: string;
   inputMode: InputMode;
   previousBest: number | null;
+  recording: Recording;
 }
 
 interface State {
@@ -167,7 +169,7 @@ export function bestScore(songKey: string): number | null {
   return load<number | null>(`best:${songKey}`, null);
 }
 
-export function finishGame(result: GameResult): void {
+export function finishGame(result: GameResult, recording: Recording): void {
   const { current, inputMode } = get();
   if (!current) return;
   const previousBest = bestScore(current.key);
@@ -179,6 +181,7 @@ export function finishGame(result: GameResult): void {
       songTitle: current.title,
       inputMode,
       previousBest,
+      recording,
     },
   });
 }

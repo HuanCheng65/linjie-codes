@@ -1,11 +1,4 @@
-import { GravityFilter } from '@linjie/penlight-core';
-
-export interface MotionSample {
-  /** 与 performance.now() 同一基准的时间（ms）。 */
-  t: number;
-  /** 去掉重力后的加速度模长（m/s²）。 */
-  magnitude: number;
-}
+import type { MotionFrame, Vec3 } from '@linjie/penlight-core';
 
 export type MotionPermission = 'granted' | 'denied' | 'unsupported';
 
@@ -56,46 +49,40 @@ export function eventTime(timeStamp: number): number {
   return timeStamp;
 }
 
+function vec(v: DeviceMotionEventAcceleration | DeviceMotionEventRotationRate | null, keys: readonly string[]): Vec3 | null {
+  if (!v) return null;
+  const r = v as unknown as Record<string, number | null>;
+  const x = r[keys[0]!];
+  const y = r[keys[1]!];
+  const z = r[keys[2]!];
+  if (x === null || y === null || z === null || x === undefined || y === undefined || z === undefined) return null;
+  return [x, y, z];
+}
+
+const XYZ = ['x', 'y', 'z'] as const;
+const ABG = ['alpha', 'beta', 'gamma'] as const;
+
 /**
- * 监听 devicemotion，输出加速度模长。
- * 优先用 `acceleration`（系统已去重力），拿不到时对 `accelerationIncludingGravity` 做高通。
+ * 监听 devicemotion，原样输出加速度和角速度，交给 core 里的 SwingDetector 处理。
  */
 export class MotionSource {
-  source: 'linear' | 'gravity' | null = null;
-  private listener: ((s: MotionSample) => void) | null = null;
-  private readonly gravity = new GravityFilter();
-  private zeroRun = 0;
+  private listener: ((f: MotionFrame) => void) | null = null;
   private readonly timestamps: number[] = [];
 
   private readonly onMotion = (e: DeviceMotionEvent) => {
-    const t = eventTime(e.timeStamp);
-    let magnitude: number | null = null;
-
-    const a = e.acceleration;
-    if (this.source !== 'gravity' && a && a.x !== null && a.y !== null && a.z !== null) {
-      magnitude = Math.hypot(a.x, a.y, a.z);
-      // 少数机型 acceleration 一直是 0，改用含重力的数据。
-      this.zeroRun = magnitude === 0 ? this.zeroRun + 1 : 0;
-      if (this.zeroRun < 30) this.source = 'linear';
-      else magnitude = null;
-    }
-
-    if (magnitude === null) {
-      const g = e.accelerationIncludingGravity;
-      if (g && g.x !== null && g.y !== null && g.z !== null) {
-        if (this.source !== 'gravity') this.gravity.reset();
-        this.source = 'gravity';
-        magnitude = this.gravity.push(t, g.x, g.y, g.z);
-      }
-    }
-
-    if (magnitude === null || !Number.isFinite(magnitude)) return;
-    this.timestamps.push(t);
+    const frame: MotionFrame = {
+      t: eventTime(e.timeStamp),
+      acc: vec(e.acceleration, XYZ),
+      accG: vec(e.accelerationIncludingGravity, XYZ),
+      rot: vec(e.rotationRate, ABG),
+    };
+    if (!frame.acc && !frame.accG && !frame.rot) return;
+    this.timestamps.push(frame.t);
     if (this.timestamps.length > 60) this.timestamps.shift();
-    this.listener?.({ t, magnitude });
+    this.listener?.(frame);
   };
 
-  start(listener: (s: MotionSample) => void): void {
+  start(listener: (f: MotionFrame) => void): void {
     this.stop();
     this.listener = listener;
     window.addEventListener('devicemotion', this.onMotion);
@@ -112,9 +99,5 @@ export class MotionSource {
     if (ts.length < 2) return 0;
     const span = ts[ts.length - 1]! - ts[0]!;
     return span > 0 ? ((ts.length - 1) * 1000) / span : 0;
-  }
-
-  get lastSampleAt(): number | null {
-    return this.timestamps.at(-1) ?? null;
   }
 }

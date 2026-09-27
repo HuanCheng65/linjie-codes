@@ -218,6 +218,11 @@
   font-weight: 600;
 }
 
+.pillSub {
+  opacity: 0.7;
+  font-weight: 500;
+}
+
 .bottom {
   position: relative;
   z-index: 2;

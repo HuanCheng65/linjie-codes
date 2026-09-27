@@ -1,7 +1,8 @@
 import {
-  SENSITIVITY_THRESHOLDS,
+  ACCEL_GATES,
+  GYRO_GATES,
   SwingDetector,
-  thresholdForSensitivity,
+  type MotionSourceKind,
 } from '@linjie/penlight-core';
 import { ArrowRight, Hand, RotateCcw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -31,20 +32,25 @@ type Status = 'waiting' | 'live' | 'silent';
 
 const NO_DATA_MS = 2000;
 
-const LEVELS = SENSITIVITY_THRESHOLDS.map((thr, i) => ({ value: i + 1, label: String(i + 1), hint: String(thr) }));
+const levels = (kind: MotionSourceKind) =>
+  (kind === 'gyro' ? GYRO_GATES : ACCEL_GATES).map((g, i) => ({ value: i + 1, label: String(i + 1), hint: String(g) }));
+
+const UNIT: Record<MotionSourceKind, string> = { gyro: '°/s', accel: 'm/s²' };
+const SOURCE: Record<MotionSourceKind, string> = { gyro: '陀螺仪', accel: '加速度' };
 
 export function SensorCheck() {
   const permission = useStore((s) => s.motionPermission);
   const sensitivity = useStore((s) => s.sensitivity);
-  const threshold = thresholdForSensitivity(sensitivity);
+  const feed = useMemo<CurveFeed>(() => ({ samples: [], swings: [], gate: 0 }), []);
+  const [detector] = useState(() => new SwingDetector(sensitivity));
+  const [kind, setKind] = useState<MotionSourceKind>('gyro');
+  const [gate, setGate] = useState(0);
 
-  const feed = useMemo<CurveFeed>(() => ({ samples: [], swings: [] }), []);
-  const [detector] = useState(() => new SwingDetector({ threshold }));
-  detector.threshold = threshold;
+  useEffect(() => detector.setSensitivity(sensitivity), [detector, sensitivity]);
 
   const [status, setStatus] = useState<Status>('waiting');
   const [rate, setRate] = useState(0);
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState<[number, number]>([0, 0]);
   const [attempt, setAttempt] = useState(0);
   const flashRef = useRef<HTMLSpanElement>(null);
 
@@ -53,13 +59,14 @@ export function SensorCheck() {
     const source = new MotionSource();
     const startedAt = performance.now();
     let lastAt = 0;
-    source.start(({ t, magnitude }) => {
+    source.start((frame) => {
       lastAt = performance.now();
-      feed.samples.push({ t, v: magnitude });
-      const swing = detector.push(t, magnitude);
+      const swing = detector.push(frame);
+      if (detector.signal) feed.samples.push({ t: detector.signal.t, v: detector.signal.value });
+      feed.gate = detector.gate;
       if (swing) {
-        feed.swings.push(swing);
-        setCount((c) => c + 1);
+        feed.swings.push({ t: swing.t, dir: swing.dir });
+        setCount(([a, b]) => (swing.dir === 0 ? [a + 1, b] : [a, b + 1]));
         flashRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], {
           duration: 480,
           easing: 'cubic-bezier(0.2, 0, 0, 1)',
@@ -71,6 +78,8 @@ export function SensorCheck() {
       if (lastAt && now - lastAt < NO_DATA_MS) {
         setStatus('live');
         setRate(Math.round(source.sampleRate));
+        if (detector.kind) setKind(detector.kind);
+        setGate(Math.round(detector.gate));
       } else if (now - startedAt > NO_DATA_MS) {
         setStatus('silent');
       }
@@ -171,37 +180,57 @@ export function SensorCheck() {
           <span ref={flashRef} className={styles.flash} aria-hidden />
           <div className={styles.curveHead}>
             <StatusPill status={permission === 'granted' ? status : 'silent'} rate={rate} />
-            <span className={styles.unit}>m/s²</span>
+            <span className={styles.unit}>
+              {SOURCE[kind]} · {UNIT[kind]}
+            </span>
           </div>
-          <LiveCurve feed={feed} threshold={threshold} />
+          <LiveCurve feed={feed} />
         </div>
       </Reveal>
 
       <Reveal>
-        <Card title="挥动计数" aside={<CountReset onReset={() => setCount(0)} disabled={count === 0} />}>
+        <Card
+          title="挥动计数"
+          aside={<CountReset onReset={() => setCount([0, 0])} disabled={count[0] + count[1] === 0} />}
+        >
           <div className={styles.counter}>
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.span
-                key={count}
+                key={count[0] + count[1]}
                 className={`${styles.count} num`}
                 initial={{ y: 24, opacity: 0, scale: 0.9 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: -24, opacity: 0, scale: 0.9 }}
                 transition={{ type: 'spring', stiffness: 520, damping: 34 }}
               >
-                {count}
+                {count[0] + count[1]}
               </motion.span>
             </AnimatePresence>
             <span className={styles.countUnit}>下</span>
+            <span className={styles.split}>
+              <span className={styles.dirA} />
+              <span className="num">{count[0]}</span>
+              <span className={styles.dirB} />
+              <span className="num">{count[1]}</span>
+            </span>
           </div>
-          <p className={styles.hint}>正常挥 20 下，看计数对不对得上；拿着手机走几步，计数不应该增加。</p>
+          <p className={styles.hint}>
+            往前挥到位、往回挥到位各算一下，两种颜色分别是两个方向。来回挥 10 次应该是 20 下；拿着手机走几步，计数不应该增加。
+          </p>
         </Card>
       </Reveal>
 
       <Reveal>
-        <Card title="灵敏度" aside={<span className="num">阈值 {threshold} m/s²</span>}>
-          <Segmented label="灵敏度" options={LEVELS} value={sensitivity} onChange={setSensitivity} />
-          <p className={styles.hint}>挥了没反应就往右调；走路也会计数就往左调。</p>
+        <Card
+          title="灵敏度"
+          aside={
+            <span className="num">
+              门槛 {gate || (kind === 'gyro' ? GYRO_GATES : ACCEL_GATES)[sensitivity - 1]} {UNIT[kind]}
+            </span>
+          }
+        >
+          <Segmented label="灵敏度" options={levels(kind)} value={sensitivity} onChange={setSensitivity} />
+          <p className={styles.hint}>挥了没反应就往右调；走路也会计数就往左调。挥得很用力时门槛会自动升高，避免手抖也被算进去。</p>
         </Card>
       </Reveal>
     </Screen>

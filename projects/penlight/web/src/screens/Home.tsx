@@ -70,15 +70,15 @@ export function Home() {
         <ol>
           <li>
             <span className={`${styles.step} num`}>1</span>
-            开头 8 拍按你的习惯挥，用来校准
+            开头 8 拍是热身，不计分
           </li>
           <li>
             <span className={`${styles.step} num`}>2</span>
-            之后跟着拍子挥，挥得越稳分越高
+            之后跟着节奏挥，快慢、动作都随你
           </li>
           <li>
             <span className={`${styles.step} num`}>3</span>
-            每拍一下、每两拍一下都可以
+            挥得越稳分越高，乱挥会扣分
           </li>
         </ol>
       </Reveal>

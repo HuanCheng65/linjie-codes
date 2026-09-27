@@ -26,6 +26,7 @@ const BASE = 116;
 export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
   const [active, setActive] = useState<number | null>(null);
 
+  const shown = useMemo(() => swings.filter((s) => s.kind !== 'neutral'), [swings]);
   const { bins, range, outside, max } = useMemo(() => {
     const range = Math.min(beatMs / 2, Math.max(150, Math.ceil((windowMs * 1.6) / 10) * 10));
     const width = range > 200 ? 20 : 10;
@@ -37,7 +38,7 @@ export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
       others: 0,
     }));
     let outside = 0;
-    for (const s of swings) {
+    for (const s of shown) {
       if (Math.abs(s.delta) > range) {
         outside++;
         continue;
@@ -48,13 +49,13 @@ export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
     }
     const max = Math.max(1, ...bins.map((b) => b.hits + b.others));
     return { bins, range, outside, max };
-  }, [swings, windowMs, beatMs]);
+  }, [shown, windowMs, beatMs]);
 
   const x = (ms: number) => PAD_X + ((ms + range) / (2 * range)) * (W - 2 * PAD_X);
   const y = (n: number) => (n / max) * (BASE - TOP);
   const binW = x(bins[0]!.to) - x(bins[0]!.from);
-  const total = swings.length;
-  const inWindow = swings.filter((s) => Math.abs(s.delta) <= windowMs).length;
+  const total = shown.length;
+  const hitCount = shown.filter((s) => s.kind === 'hit').length;
   const activeBin = active === null ? null : bins[active]!;
 
   return (
@@ -66,13 +67,13 @@ export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
               {fmt(activeBin.from)} ~ {fmt(activeBin.to)} ms
             </span>
             <span>
-              命中 <b className="num">{activeBin.hits}</b> · 其他 <b className="num">{activeBin.others}</b>
+              命中 <b className="num">{activeBin.hits}</b> · 乱挥 <b className="num">{activeBin.others}</b>
             </span>
           </>
         ) : (
           <>
             <span>
-              共 <b className="num">{total}</b> 下，窗口内 <b className="num">{inWindow}</b> 下
+              共 <b className="num">{total}</b> 下，命中 <b className="num">{hitCount}</b> 下
             </span>
             {outside > 0 && <span className="num">范围外 {outside}</span>}
           </>
@@ -83,7 +84,7 @@ export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
         viewBox={`0 0 ${W} ${H}`}
         className={styles.svg}
         role="img"
-        aria-label={`偏差分布，共 ${total} 次挥动，${inWindow} 次在判定窗口内`}
+        aria-label={`偏差分布，共 ${total} 次挥动，命中 ${hitCount} 次`}
         onPointerLeave={() => setActive(null)}
       >
         <rect x={x(-windowMs)} y={TOP - 10} width={x(windowMs) - x(-windowMs)} height={BASE - TOP + 10} className={styles.window} rx={4} />
@@ -157,7 +158,7 @@ export function Histogram({ swings, windowMs, beatMs }: HistogramProps) {
           <i className={styles.swatchHit} /> 命中
         </span>
         <span>
-          <i className={styles.swatchOther} /> 多余或回程
+          <i className={styles.swatchOther} /> 乱挥
         </span>
       </div>
     </div>
