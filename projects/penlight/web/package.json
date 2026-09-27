@@ -1,9 +1,13 @@
 {
-  "name": "@linjie/penlight",
+  "name": "@linjie/penlight-web",
   "version": "0.1.0",
   "private": true,
   "description": "应援棒互动游戏 · 手机端",
   "type": "module",
+  "linjie": {
+    "pages": "penlight",
+    "title": "应援棒"
+  },
   "scripts": {
     "dev": "vite",
     "dev:https": "vite --mode https --host",

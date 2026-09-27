@@ -1,14 +1,14 @@
-# 应援棒 · 手机端
+# 应援棒 · 手机端（@linjie/penlight-web）
 
 晚会中场的互动游戏：观众把手机当应援棒，跟着音乐挥动，手机判定节奏稳不稳。
-这里是第一阶段的**单机版**，用来验证挥动检测和判定手感。需求见 [`docs/penlight/brief.md`](../../docs/penlight/brief.md)。
+这里是第一阶段的**单机版**，用来验证挥动检测和判定手感。需求见 [`docs/brief.md`](../docs/brief.md)。
 
 ## 本地开发
 
 ```bash
 pnpm install
-pnpm dev            # http://localhost:5173，电脑上用「点屏幕」模式调试，空格键也能打拍
-pnpm dev:https      # 局域网 HTTPS（自签名证书），手机连同一个 Wi-Fi 访问终端里打印的地址
+pnpm penlight dev    # http://localhost:5173，电脑上用「点屏幕」模式调试，空格键也能打拍
+pnpm penlight dev:https # 局域网 HTTPS（自签名证书），手机连同一个 Wi-Fi 访问终端里打印的地址
 ```
 
 传感器 API 只在 HTTPS 页面、而且不被 iframe 嵌套时才有数据。手机访问 `dev:https` 的地址时会提示证书不受信任，
@@ -38,7 +38,7 @@ src/
   styles/        设计 token 和全局样式
 ```
 
-判定和计分都在 [`@linjie/penlight-core`](../../packages/penlight-core) 里，这里只负责采集输入和展示。
+判定和计分都在 [`@linjie/penlight-core`](../core) 里，这里只负责采集输入和展示。
 
 - 挥动检测：`SwingDetector`，按 brief 的峰值状态机实现。优先用 `event.acceleration`，拿不到时对
   `accelerationIncludingGravity` 做高通。

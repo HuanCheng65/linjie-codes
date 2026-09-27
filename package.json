@@ -6,9 +6,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter @linjie/penlight dev",
-    "build": "pnpm -r build",
+    "penlight": "pnpm --filter @linjie/penlight-web",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "site": "node scripts/build-site.mjs"
   }
 }

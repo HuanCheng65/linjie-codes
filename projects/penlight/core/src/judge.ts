@@ -2,7 +2,7 @@ import { CALIBRATION_BEATS, type Chart } from './chart';
 import { beatPeriod, beatPosition, beatTime, nearestBeat } from './grid';
 
 /**
- * 判定规则（详见 docs/penlight/brief.md「玩法与判定规则」）：
+ * 判定规则（详见 projects/penlight/docs/brief.md「玩法与判定规则」）：
  *
  * 1. 校准：判定范围的前 8 拍，取每次挥动相对最近拍子的偏差（只取 ±0.3 拍以内的），
  *    中位数作为个人偏移。有效挥动少于 3 次时偏移记为 0。

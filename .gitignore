@@ -5,3 +5,4 @@ dist/
 coverage/
 .vite/
 *.tsbuildinfo
+_site/

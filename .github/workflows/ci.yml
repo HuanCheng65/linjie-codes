@@ -27,17 +27,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: Assemble site
-        run: |
-          mkdir -p _site/penlight
-          cp -r apps/penlight/dist/. _site/penlight/
-          cat > _site/index.html <<'HTML'
-          <!doctype html>
-          <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=./penlight/">
-          <title>linjie-codes</title>
-          <a href="./penlight/">应援棒</a>
-          HTML
+      - run: pnpm site
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

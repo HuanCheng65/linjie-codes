@@ -11,7 +11,7 @@
 | `fit.ts` | 把识别出的拍点拟合成等间距网格（周期最小二乘，相位圆周平均） |
 | `presets.ts` | 内置测试曲的谱面 |
 
-规则细节见 [`docs/penlight/brief.md`](../../docs/penlight/brief.md) 的「玩法与判定规则」，
+规则细节见 [`docs/brief.md`](../docs/brief.md) 的「玩法与判定规则」，
 每条规则在 `test/` 里都有对应的测试。
 
 ```bash
