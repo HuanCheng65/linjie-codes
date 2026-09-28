@@ -91,7 +91,8 @@ export function BeatEditor() {
   const { song, map, selection } = u;
   const now = () => player.position() ?? cursor.current;
 
-  const sections = tempoSections(map).filter((s) => s.endTime > 0 && s.startTime < song.duration);
+  // 只看有声音的范围，结尾尾音和空白里的拍子是延伸出来的，不算一段
+  const sections = tempoSections(map).filter((s) => s.endTime > song.active.start && s.startTime < song.active.end - 2);
   const varying = sections.length > 1;
   const mainSection = sections.reduce((a, b) => (b.endBeat - b.startBeat > a.endBeat - a.startBeat ? b : a), sections[0]!);
   // 只有开头或结尾速度不同（比如结尾渐慢），整首大部分还是一个速度
@@ -366,11 +367,11 @@ export function BeatEditor() {
               size="sm"
               variant="ghost"
               icon={Sparkles}
-              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.duration, 60))}
+              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.active.end, 60))}
             >
               推荐副歌
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelection({ start: snapToBar(u, 0, 'start'), end: song.duration })}>
+            <Button size="sm" variant="ghost" onClick={() => setSelection({ start: snapToBar(u, song.active.start, 'start'), end: song.active.end })}>
               整首
             </Button>
           </div>
@@ -396,7 +397,7 @@ export function BeatEditor() {
                   : '这首歌中途变速，节拍已经按段对齐。'}
                 某一段听起来快了一倍或慢了一半，就选中那一段再点 ½ 或 ×2。
               </p>
-              <TempoStrip sections={sections} duration={song.duration} selected={section} onSelect={setSection} />
+              <TempoStrip sections={sections} duration={song.active.end} selected={section} onSelect={setSection} />
             </>
           ) : null}
           <div className={styles.tempo}>

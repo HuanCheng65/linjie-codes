@@ -276,8 +276,32 @@ export function alignLevel(map: BeatMap, reference: BeatMap, from: number, to: n
 }
 
 
+function medianOf(values: Float32Array): number {
+  const sorted = Array.from(values).sort((a, b) => a - b);
+  return sorted[sorted.length >> 1] ?? 0;
+}
+
+/** 某个时间前后 half 秒的平均能量。 */
+function energyAround(env: Envelope, t: number, half = 0.5): number {
+  return meanIn(env, Math.max(0, t - half), t + half);
+}
+
 /**
- * 从节拍识别的拍点得到最终的节拍表：整理成逐拍的表，检查是不是附点节奏的级别，
+ * 有声音的范围：前后 0.5 秒平均能量不低于整首中位数 threshold 倍的第一个和最后一个时刻。
+ * 很多音频结尾有一段只剩很轻尾音或者空白，「整首」和推荐选段都以这里为准。
+ */
+export function activeRange(env: Envelope, duration: number, threshold = 0.1): { start: number; end: number } {
+  const floor = threshold * medianOf(env.values);
+  const step = env.hop * 5;
+  let start = 0;
+  while (start < duration && energyAround(env, start) < floor) start += step;
+  let end = duration;
+  while (end > start && energyAround(env, end) < floor) end -= step;
+  return { start: Math.max(0, start - 0.25), end: Math.min(duration, end + 0.25) };
+}
+
+/**
+ * 从节拍识别的拍点得到最终的节拍表：去掉没声音处的拍点，整理成逐拍的表，检查是不是附点节奏的级别，
  * 有参考结果（先分析的前 90 秒）时和它保持同一个级别。手机端和测试共用这一条流程。
  */
 export function beatMapFromTicks(
@@ -286,7 +310,11 @@ export function beatMapFromTicks(
 ): BeatMap {
   const onset = onsetEnvelope(o.env);
   const lowOnset = o.low ? onsetEnvelope(o.low) : undefined;
-  let map: BeatMap = buildBeatMap(ticks, { duration: o.duration });
+  // 声音很轻的地方（结尾尾音、空白、停顿）识别器还会按惯性继续给拍点，这些不能用来判断速度，
+  // 去掉之后按前后的速度补
+  const floor = 0.1 * medianOf(o.env.values);
+  const heard = ticks.filter((t) => energyAround(o.env, t) >= floor);
+  let map: BeatMap = buildBeatMap(heard.length >= 8 ? heard : ticks, { duration: o.duration });
   map = correctMetricalLevel(map, onset, o.duration, lowOnset).map;
   if (o.reference) map = alignLevel(map, o.reference.map, 0, o.reference.until);
   return map;

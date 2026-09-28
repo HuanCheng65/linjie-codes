@@ -1,4 +1,5 @@
 import {
+  activeRange,
   beatMapFromTicks,
   envelopeOf,
   estimateDownbeat,
@@ -28,6 +29,8 @@ export interface AnalyzedSong {
   env: Envelope;
   /** 低频包络，用来找小节第一拍。 */
   low: Envelope;
+  /** 有声音的范围。结尾常有一段只剩很轻的尾音或空白，「整首」和推荐选段都以这里为准。 */
+  active: { start: number; end: number };
 }
 
 export interface Analysis {
@@ -99,11 +102,12 @@ export async function analyzeFile(file: File, onStage: (stage: AnalyzeStage) => 
     peaks: computePeaks(buffer, 1200),
     env,
     low,
+    active: activeRange(env, duration),
   };
 
   const finish = (map: BeatMap, complete: boolean, full: Promise<BeatMap> | null): Analysis => {
-    const downbeat = estimateDownbeat(map, low, duration);
-    return { song, map, downbeat, selection: recommendSelection(map, env, downbeat, duration, 60), complete, full };
+    const downbeat = estimateDownbeat(map, low, song.active.end);
+    return { song, map, downbeat, selection: recommendSelection(map, env, downbeat, song.active.end, 60), complete, full };
   };
 
   const features = { duration, env, low };

@@ -35,7 +35,7 @@ export function applyFullAnalysis(u: UploadState, map: BeatMap): UploadState {
     ...u,
     map,
     detected: map,
-    downbeat: u.downbeatManual ? u.downbeat : estimateDownbeat(map, u.song.low, u.song.duration),
+    downbeat: u.downbeatManual ? u.downbeat : estimateDownbeat(map, u.song.low, u.song.active.end),
     analysis: 'full',
     pendingFull: null,
   };
@@ -44,7 +44,9 @@ export function applyFullAnalysis(u: UploadState, map: BeatMap): UploadState {
 /** 对齐到最近的小节线。靠近歌曲结尾时直接到结尾。 */
 export function snapToBar(u: Pick<UploadState, 'map' | 'downbeat' | 'song'>, t: number, edge: 'start' | 'end'): number {
   const { duration } = u.song;
-  if (edge === 'end' && duration - t < 1.5) return duration;
+  // 靠近声音结束的地方（后面只剩尾音或空白）直接对齐到声音结束
+  const end = u.song.active.end;
+  if (edge === 'end' && t > end - 1.5) return Math.min(t, duration) > end + 1.5 ? Math.min(t, duration) : end;
   const bar = beatTime(u.map, nearestBar(u.map, t, u.downbeat));
   if (bar < 0) return beatTime(u.map, nearestBar(u.map, t, u.downbeat) + 4);
   return Math.min(bar, edge === 'end' ? duration : duration - MIN_SELECTION_SECONDS);
