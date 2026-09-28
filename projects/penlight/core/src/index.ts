@@ -6,3 +6,5 @@ export * from './fit';
 export * from './features';
 export * from './presets';
 export * from './recording';
+export * from './chroma';
+export * from './structure';

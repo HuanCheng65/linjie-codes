@@ -7,6 +7,7 @@ import {
   lastBeatAtOrBefore,
   MIN_SELECTION_SECONDS,
   nearestBar,
+  recommendSelection,
   sectionBreaks,
   type BeatMap,
   type Chart,
@@ -22,6 +23,7 @@ export function uploadFromAnalysis(a: Analysis): UploadState {
     downbeat: a.downbeat,
     downbeatManual: false,
     selection: a.selection,
+    selectionManual: false,
     analysis: a.complete ? 'full' : 'partial',
     pendingFull: null,
     edited: false,
@@ -31,14 +33,11 @@ export function uploadFromAnalysis(a: Analysis): UploadState {
 /** 整首分析完成：用户没改过节拍就直接换上，否则先放着等用户决定。 */
 export function applyFullAnalysis(u: UploadState, map: BeatMap): UploadState {
   if (u.edited) return { ...u, analysis: 'full', pendingFull: map };
-  return {
-    ...u,
-    map,
-    detected: map,
-    downbeat: u.downbeatManual ? u.downbeat : estimateDownbeat(map, u.song.low, u.song.active.end),
-    analysis: 'full',
-    pendingFull: null,
-  };
+  const { song } = u;
+  const downbeat = u.downbeatManual ? u.downbeat : estimateDownbeat(map, song.low, song.active.end);
+  // 前 90 秒之后的拍子原来是推算的，整首的结果出来后推荐选段也重新算一次
+  const selection = u.selectionManual ? u.selection : recommendSelection(map, song.env, downbeat, song.active.end, 60, song.chroma);
+  return { ...u, map, detected: map, downbeat, selection, analysis: 'full', pendingFull: null };
 }
 
 /** 对齐到最近的小节线。靠近歌曲结尾时直接到结尾。 */

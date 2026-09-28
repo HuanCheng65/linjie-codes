@@ -1,11 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { activeRange, averageBpm, beatMapFromTicks, tempoSections, type BeatMap, type Envelope } from '../src/index';
+import {
+  activeRange,
+  averageBpm,
+  beatPosition,
+  beatTime,
+  beatMapFromTicks,
+  estimateDownbeat,
+  findRepetition,
+  recommendSelection,
+  tempoSections,
+  type BeatMap,
+  type Chroma,
+  type Envelope,
+} from '../src/index';
 
 /**
  * 真实歌曲的识别数据（只有拍点和能量包络，不含音频），在手机端用 Essentia.js 跑出来的。
- * quick 是前 90 秒的结果，full 是整首的结果。
+ * quick 是前 90 秒的结果，full 是整首的结果。chroma 是色度特征（按整首最大值缩放到 0–999）。
  */
 interface Fixture {
   duration: number;
@@ -14,6 +27,7 @@ interface Fixture {
   hop: number;
   env: number[];
   low: number[];
+  chroma: { hop: number; values: number[] };
 }
 
 const load = (name: string) => JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', `${name}.json`), 'utf8')) as Fixture;
@@ -93,5 +107,49 @@ describe('カラノワレモノ（140 BPM，开头约 8 秒乐器少、声音轻
     const sections = inSong(full, f.duration);
     expect(sections).toHaveLength(1);
     expect(sections[0]!.bpm).toBeCloseTo(140, 0);
+  });
+});
+
+describe('カラノワレモノ的推荐选段', () => {
+  const f = load('karano');
+  const { full } = pipeline(f);
+  const env: Envelope = { hop: f.hop, values: Float32Array.from(f.env) };
+  const low: Envelope = { hop: f.hop, values: Float32Array.from(f.low) };
+  const chroma: Chroma = { hop: f.chroma.hop, values: Float32Array.from(f.chroma.values) };
+  const end = activeRange(env, f.duration).end;
+  const downbeat = estimateDownbeat(full, low, end);
+
+  it('只看音量时从最后一段副歌的第二句（3:42 左右）切进去', () => {
+    const sel = recommendSelection(full, env, downbeat, end, 60);
+    expect(sel.start).toBeGreaterThan(221);
+  });
+
+  it('按重复段找副歌，最后一段副歌从 3:40 开始，并多留一小节给第一句的弱起', () => {
+    const sel = recommendSelection(full, env, downbeat, end, 60, chroma);
+    expect(sel.start).toBeGreaterThan(217.5);
+    expect(sel.start).toBeLessThan(219.5);
+    expect(sel.end - sel.start).toBeGreaterThan(50);
+    expect(sel.end - sel.start).toBeLessThan(70);
+  });
+
+  it('开头进鼓后的段落在 2:28 和 4:35 又出现，被找成重复段', () => {
+    const bars: number[] = [];
+    for (let b = Math.round(beatPosition(full, downbeat)) % 4; beatTime(full, b + 4) < end; b += 4) if (beatTime(full, b) >= 0) bars.push(b);
+    const rep = findRepetition(full, chroma, bars);
+    const barAt = (t: number) => bars.findIndex((b) => Math.abs(beatTime(full, b) - t) < 1);
+    for (const t of [11.3, 148.5, 275.3]) expect(rep.coverage[barAt(t)]).toBeGreaterThan(0);
+  });
+});
+
+describe('色度不够可靠的歌退回按音量选', () => {
+  it('余花：重复段太少，结果和只看音量一样', () => {
+    const f = load('yoka');
+    const { full } = pipeline(f);
+    const env: Envelope = { hop: f.hop, values: Float32Array.from(f.env) };
+    const low: Envelope = { hop: f.hop, values: Float32Array.from(f.low) };
+    const chroma: Chroma = { hop: f.chroma.hop, values: Float32Array.from(f.chroma.values) };
+    const end = activeRange(env, f.duration).end;
+    const downbeat = estimateDownbeat(full, low, end);
+    expect(recommendSelection(full, env, downbeat, end, 60, chroma)).toEqual(recommendSelection(full, env, downbeat, end, 60));
   });
 });

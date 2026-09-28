@@ -49,6 +49,16 @@ export async function lowBand(buffer: AudioBuffer): Promise<{ samples: Float32Ar
   return { samples: rendered.getChannelData(0), sampleRate };
 }
 
+/** 混成 11025 Hz 单声道，给色度特征（找副歌）用。 */
+export async function mono11k(buffer: AudioBuffer): Promise<Float32Array> {
+  const offline = new OfflineAudioContext(1, Math.ceil(buffer.duration * 11025), 11025);
+  const src = offline.createBufferSource();
+  src.buffer = buffer;
+  src.connect(offline.destination);
+  src.start();
+  return (await offline.startRendering()).getChannelData(0);
+}
+
 /** 截取前 maxSeconds 秒，混成 44.1 kHz 单声道，给节拍识别用。 */
 export async function toMono44k(buffer: AudioBuffer, maxSeconds: number): Promise<Float32Array> {
   const seconds = Math.min(buffer.duration, maxSeconds);

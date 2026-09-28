@@ -132,7 +132,7 @@ export function BeatEditor() {
     if (playing) playFrom(t);
   };
 
-  const setSelection = (r: Range) => patch({ selection: r });
+  const setSelection = (r: Range, manual = true) => patch({ selection: r, selectionManual: manual });
 
   const markStart = () => {
     const s = snapToBar(u, now(), 'start');
@@ -313,7 +313,7 @@ export function BeatEditor() {
             duration={song.duration}
             selection={selection}
             minLength={MIN_SELECTION_SECONDS}
-            onChange={setSelection}
+            onChange={(r) => setSelection(r)}
             snap={(t, e) => snapToBar(u, t, e)}
             describe={(t) => `${fmtPrecise(t)} · 第 ${barNumber(u, t)} 小节`}
             onNudge={nudgeEdge}
@@ -367,7 +367,7 @@ export function BeatEditor() {
               size="sm"
               variant="ghost"
               icon={Sparkles}
-              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.active.end, 60))}
+              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.active.end, 60, song.chroma), false)}
             >
               推荐副歌
             </Button>

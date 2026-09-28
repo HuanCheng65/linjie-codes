@@ -5,11 +5,12 @@ import {
   estimateDownbeat,
   recommendSelection,
   type BeatMap,
+  type Chroma,
   type Envelope,
   type Selection,
 } from '@linjie/penlight-core';
 import type { AnalyzeResponse } from '../workers/analyze.worker';
-import { computePeaks, decodeAudio, lowBand, toMono44k } from './audio';
+import { computePeaks, decodeAudio, lowBand, mono11k, toMono44k } from './audio';
 import { CACHE_VERSION, cacheGet, cachePut, fingerprint } from './cache';
 
 /** 先分析前 90 秒，马上能用；整首歌在后台接着分析。 */
@@ -29,6 +30,8 @@ export interface AnalyzedSong {
   env: Envelope;
   /** 低频包络，用来找小节第一拍。 */
   low: Envelope;
+  /** 色度特征，用来找重复的段落（副歌）。算不出来时为 undefined，推荐选段退回按音量选。 */
+  chroma?: Chroma;
   /** 有声音的范围。结尾常有一段只剩很轻的尾音或空白，「整首」和推荐选段都以这里为准。 */
   active: { start: number; end: number };
 }
@@ -65,6 +68,22 @@ function runWorker(pcm: Float32Array): Promise<{ bpm: number; confidence: number
   }).finally(() => worker.terminate());
 }
 
+/** 色度特征在另一个线程里算，出错时不影响其他功能。 */
+function runChroma(pcm: Float32Array): Promise<Chroma | undefined> {
+  return new Promise<Chroma | undefined>((resolve) => {
+    const worker = new Worker(new URL('../workers/chroma.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<Chroma>) => {
+      resolve(e.data);
+      worker.terminate();
+    };
+    worker.onerror = () => {
+      resolve(undefined);
+      worker.terminate();
+    };
+    worker.postMessage({ pcm, sampleRate: 11025 }, [pcm.buffer]);
+  });
+}
+
 function mapFrom(
   ticks: number[],
   o: { duration: number; env: Envelope; low: Envelope; reference?: { map: BeatMap; until: number } },
@@ -94,6 +113,8 @@ export async function analyzeFile(file: File, onStage: (stage: AnalyzeStage) => 
   const env = envelopeOf(mono, 44100, 0.02);
   const lowPcm = await lowBand(buffer);
   const low = envelopeOf(lowPcm.samples, lowPcm.sampleRate, 0.02);
+  // 色度只需要 2 kHz 以下，用 11 kHz 的版本，省内存也省时间
+  const chroma = runChroma(await mono11k(buffer));
   const song: AnalyzedSong = {
     title: file.name.replace(/\.[^.]+$/, ''),
     hash,
@@ -105,9 +126,11 @@ export async function analyzeFile(file: File, onStage: (stage: AnalyzeStage) => 
     active: activeRange(env, duration),
   };
 
-  const finish = (map: BeatMap, complete: boolean, full: Promise<BeatMap> | null): Analysis => {
+  const finish = async (map: BeatMap, complete: boolean, full: Promise<BeatMap> | null): Promise<Analysis> => {
+    song.chroma = await chroma;
     const downbeat = estimateDownbeat(map, low, song.active.end);
-    return { song, map, downbeat, selection: recommendSelection(map, env, downbeat, song.active.end, 60), complete, full };
+    const selection = recommendSelection(map, env, downbeat, song.active.end, 60, song.chroma);
+    return { song, map, downbeat, selection, complete, full };
   };
 
   const features = { duration, env, low };

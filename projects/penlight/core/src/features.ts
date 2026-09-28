@@ -1,4 +1,6 @@
+import type { Chroma } from './chroma';
 import { buildBeatMap } from './fit';
+import { findRepetition } from './structure';
 import { beatPosition, beatTime, firstBeatAtOrAfter, lastBeatAtOrBefore, nearestBar, resampleMap, tempoSections, type BeatMap } from './grid';
 
 /**
@@ -82,29 +84,62 @@ export interface Selection {
 }
 
 /**
- * 推荐一段副歌：在 16–32 小节长的窗口里找平均能量最高的一段，起止对齐小节线。
- * 找不到时退回整首。
+ * 推荐一段副歌，起止对齐小节线，长度约 targetSeconds。
+ *
+ * 有色度特征时，先找歌里重复出现的段落（副歌一般会出现好几次），只从重复段的起点开始选，
+ * 这样不会从一句的中间切进去；窗口里重复得越多、声音越大，分数越高。结尾也尽量落在段落交界上。
+ * 没有色度特征，或者整首找不到足够的重复时，退回按音量选最响的一段。
  */
-export function recommendSelection(map: BeatMap, env: Envelope, downbeat: number, duration: number, targetSeconds = 60): Selection {
+export function recommendSelection(
+  map: BeatMap,
+  env: Envelope,
+  downbeat: number,
+  duration: number,
+  targetSeconds = 60,
+  chroma?: Chroma,
+): Selection {
   const firstBar = nearestBar(map, Math.max(0, beatTime(map, 0)), downbeat);
   const bars: number[] = [];
   for (let b = firstBar; beatTime(map, b) < duration - 1; b += 4) if (beatTime(map, b) >= 0) bars.push(b);
   if (bars.length < 6) return { start: 0, end: duration };
   const barEnergy = bars.map((b) => meanIn(env, beatTime(map, b), beatTime(map, b + 4)));
+  const top = Math.max(...barEnergy) || 1;
   const barLen = beatTime(map, bars[1]!) - beatTime(map, bars[0]!);
   const n = Math.max(4, Math.min(bars.length - 1, Math.round(targetSeconds / barLen / 4) * 4));
-  let best = 0;
+
+  // 重复段覆盖不到三成时证据太弱（抒情歌每段编曲变化大，色度常常只对上一两处），不用
+  const found = chroma ? findRepetition(map, chroma, bars) : null;
+  const rep = found && found.coverage.filter((c) => c > 0).length >= 0.3 * bars.length ? found : null;
+  // 副歌第一句常常从前一小节的弱起开始唱，起点往前多留一小节
+  const lead = rep ? 1 : 0;
+  const candidates = rep
+    ? rep.starts.flatMap((v, i) => (v > 0 && i - lead >= 0 && i + n <= bars.length ? [i] : []))
+    : bars.map((_, i) => i).filter((i) => i + n <= bars.length);
+  const weight = (k: number) => (rep ? 1 + Math.min(rep.coverage[k]!, 4) / 4 : 1);
+
+  let best = candidates[0] ?? 0;
   let bestScore = -Infinity;
-  for (let i = 0; i + n <= bars.length; i++) {
+  for (const i of candidates) {
     let s = 0;
-    for (let k = i; k < i + n; k++) s += barEnergy[k]!;
+    for (let k = i; k < i + n; k++) s += (barEnergy[k]! / top) * weight(k);
     if (s > bestScore) {
       bestScore = s;
       best = i;
     }
   }
-  const endBar = bars[best + n] ?? bars[bars.length - 1]! + 4;
-  return { start: beatTime(map, bars[best]!), end: Math.min(duration, beatTime(map, endBar)) };
+  let endIndex = best + n;
+  if (rep) {
+    // 结尾挪到附近（前后 4 小节内）另一段重复开始的地方
+    for (let d = 0; d <= 4; d++) {
+      const hit = [endIndex - d, endIndex + d].find((k) => k > best + n / 2 && k < bars.length && rep.starts[k]! > 0);
+      if (hit !== undefined) {
+        endIndex = hit;
+        break;
+      }
+    }
+  }
+  const endBar = bars[endIndex] ?? bars[bars.length - 1]! + 4;
+  return { start: beatTime(map, bars[best - lead]!), end: Math.min(duration, beatTime(map, endBar)) };
 }
 
 /**

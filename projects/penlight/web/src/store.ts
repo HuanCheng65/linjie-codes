@@ -31,6 +31,8 @@ export interface UploadState {
   downbeat: number;
   downbeatManual: boolean;
   selection: { start: number; end: number };
+  /** 用户自己调过选段。没调过时，整首分析完会按完整结果重新推荐一次。 */
+  selectionManual: boolean;
   /** partial：只分析了前 90 秒，整首还在后台分析；full：整首分析完；failed：后台分析失败。 */
   analysis: 'partial' | 'full' | 'failed';
   /** 整首分析完成时用户已经改过节拍，先放在这里，等用户决定要不要用。 */
