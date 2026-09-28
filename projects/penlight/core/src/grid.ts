@@ -173,6 +173,15 @@ export function tempoSections(map: BeatMap, tolerance = 0.03, minBeats = 12): Te
   const close = (x: number, y: number) => Math.abs(x / y - 1) <= tolerance;
   for (let changed = true; changed; ) {
     changed = false;
+    // 相邻两段平均速度几乎一样（只是交界处抖了一下），直接合并
+    for (let i = 1; i < sections.length; i++) {
+      if (Math.abs(sections[i]!.bpm / sections[i - 1]!.bpm - 1) <= tolerance / 2) {
+        sections.splice(i - 1, 2, make(sections[i - 1]!.startBeat, sections[i]!.endBeat));
+        changed = true;
+        break;
+      }
+    }
+    if (changed) continue;
     for (let i = 0; i < sections.length; i++) {
       const s = sections[i]!;
       if (s.endBeat - s.startBeat >= 2 * minBeats) continue;

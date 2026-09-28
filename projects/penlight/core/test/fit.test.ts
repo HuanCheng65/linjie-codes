@@ -81,6 +81,26 @@ describe('buildBeatMap', () => {
     expect(Math.abs(pos - Math.round(pos)) * p).toBeLessThan(0.01);
   });
 
+  it('抒情歌结尾真的渐慢：拍点规律，保留下来', () => {
+    const times: number[] = [];
+    let t = 0.4;
+    for (let i = 0; i < 360; i++) {
+      times.push(t);
+      t += 60 / 83;
+    }
+    // 最后 16 拍从 83 慢慢放慢到 55
+    for (let i = 0; i < 16; i++) {
+      times.push(t);
+      t += 60 / (83 - (28 * (i + 1)) / 16);
+    }
+    const m = buildBeatMap(jittered(times, 0.008, 6), { duration: t + 2 });
+    for (const x of times.slice(-14, -2)) {
+      const pos = beatPosition(m, x);
+      const p = beatTime(m, Math.round(pos) + 1) - beatTime(m, Math.round(pos));
+      expect(Math.abs(pos - Math.round(pos)) * p).toBeLessThan(0.03);
+    }
+  });
+
   it('中间一段被识别成倍速：自动改回主段落的速度', () => {
     const truth = uniform(140, 0.5, 280);
     const ticks: number[] = [];

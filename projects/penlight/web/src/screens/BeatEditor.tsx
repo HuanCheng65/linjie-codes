@@ -93,6 +93,9 @@ export function BeatEditor() {
 
   const sections = tempoSections(map).filter((s) => s.endTime > 0 && s.startTime < song.duration);
   const varying = sections.length > 1;
+  const mainSection = sections.reduce((a, b) => (b.endBeat - b.startBeat > a.endBeat - a.startBeat ? b : a), sections[0]!);
+  // 只有开头或结尾速度不同（比如结尾渐慢），整首大部分还是一个速度
+  const edgesOnly = varying && sections.every((x, i) => x === mainSection || i === 0 || i === sections.length - 1);
   const activeSection = varying && section !== null ? sections[section] : undefined;
   const inSelection = map.times.filter((t) => t >= selection.start && t <= selection.end);
   const selectionBpm = averageBpm(inSelection.length > 2 ? { times: inSelection } : map);
@@ -231,7 +234,15 @@ export function BeatEditor() {
           <p className={styles.songMeta}>
             <span className="num">{formatTime(song.duration)}</span>
             <span>·</span>
-            <span>{varying ? `变速 ${sections.length} 段` : <><span className="num">{formatBpm(averageBpm(map))}</span> BPM</>}</span>
+            <span>
+              {varying && !edgesOnly ? (
+                `变速 ${sections.length} 段`
+              ) : (
+                <>
+                  <span className="num">{formatBpm(varying ? mainSection.bpm : averageBpm(map))}</span> BPM{edgesOnly ? ' · 首尾速度不同' : ''}
+                </>
+              )}
+            </span>
             {u.analysis === 'partial' && (
               <span className={styles.analyzing}>
                 <Spinner size={12} /> 正在分析后半段节拍
@@ -363,7 +374,12 @@ export function BeatEditor() {
         >
           {varying ? (
             <>
-              <p className={styles.hint}>这首歌中途变速，节拍已经按段对齐。某一段听起来快了一倍或慢了一半，就选中那一段再点 ½ 或 ×2。</p>
+              <p className={styles.hint}>
+                {edgesOnly
+                  ? '这首歌开头或结尾的速度和中间不一样（比如结尾渐慢），节拍已经跟着对齐。'
+                  : '这首歌中途变速，节拍已经按段对齐。'}
+                某一段听起来快了一倍或慢了一半，就选中那一段再点 ½ 或 ×2。
+              </p>
               <TempoStrip sections={sections} duration={song.duration} selected={section} onSelect={setSection} />
             </>
           ) : null}
