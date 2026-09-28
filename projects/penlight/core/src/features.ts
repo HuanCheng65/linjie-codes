@@ -300,6 +300,10 @@ export function activeRange(env: Envelope, duration: number, threshold = 0.1): {
   return { start: Math.max(0, start - 0.25), end: Math.min(duration, end + 0.25) };
 }
 
+/** 首尾短于这么多秒、平均能量低于整首中位数这个倍数的段落，不单独算速度。 */
+const QUIET_EDGE_SECONDS = 20;
+const QUIET_EDGE_RATIO = 0.35;
+
 /**
  * 从节拍识别的拍点得到最终的节拍表：去掉没声音处的拍点，整理成逐拍的表，检查是不是附点节奏的级别，
  * 有参考结果（先分析的前 90 秒）时和它保持同一个级别。手机端和测试共用这一条流程。
@@ -312,9 +316,24 @@ export function beatMapFromTicks(
   const lowOnset = o.low ? onsetEnvelope(o.low) : undefined;
   // 声音很轻的地方（结尾尾音、空白、停顿）识别器还会按惯性继续给拍点，这些不能用来判断速度，
   // 去掉之后按前后的速度补
-  const floor = 0.1 * medianOf(o.env.values);
+  const median = medianOf(o.env.values);
+  const floor = 0.1 * median;
   const heard = ticks.filter((t) => energyAround(o.env, t) >= floor);
-  let map: BeatMap = buildBeatMap(heard.length >= 8 ? heard : ticks, { duration: o.duration });
+  let used = heard.length >= 8 ? heard : ticks;
+  let map: BeatMap = buildBeatMap(used, { duration: o.duration });
+  // 开头或结尾一小段声音明显偏轻（乐器少的前奏、淡出）时，识别器常常抓不准，给出一段对不上的速度。
+  // 这种段落不单独算速度，去掉里面的拍点，按旁边主体的速度往外延
+  const sections = tempoSections(map);
+  if (sections.length > 1) {
+    const edges = [sections[0]!, sections[sections.length - 1]!]
+      .map((s) => [Math.max(0, s.startTime), Math.min(o.duration, s.endTime)] as const)
+      .filter(([a, b]) => b - a < QUIET_EDGE_SECONDS && meanIn(o.env, a, b) < QUIET_EDGE_RATIO * median);
+    const kept = used.filter((t) => !edges.some(([a, b]) => (a === 0 || t >= a) && (b === o.duration || t < b)));
+    if (edges.length && kept.length >= 8) {
+      used = kept;
+      map = buildBeatMap(used, { duration: o.duration });
+    }
+  }
   map = correctMetricalLevel(map, onset, o.duration, lowOnset).map;
   if (o.reference) map = alignLevel(map, o.reference.map, 0, o.reference.until);
   return map;

@@ -68,7 +68,12 @@ export function TrimWaveform(props: TrimWaveformProps) {
       const mid = height / 2;
       for (let i = 0; i < n; i++) {
         const t = ((i + 0.5) / n) * duration;
-        const p = peaks[Math.min(peaks.length - 1, Math.floor((i / n) * peaks.length))]!;
+        // 一根柱子覆盖好几段时取平均，避免只抽其中一段造成忽高忽低
+        const a = Math.min(peaks.length - 1, Math.floor((i / n) * peaks.length));
+        const b = Math.min(peaks.length, Math.max(a + 1, Math.floor(((i + 1) / n) * peaks.length)));
+        let p = 0;
+        for (let k = a; k < b; k++) p += peaks[k]!;
+        p /= b - a;
         const h = Math.max(1.5, p * (height / 2 - 6));
         const inside = t >= sel.start && t <= sel.end;
         ctx.fillStyle = inside ? colors.accent : withAlpha(colors.muted, 0.9);

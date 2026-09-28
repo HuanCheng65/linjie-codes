@@ -77,3 +77,21 @@ describe('ReDreaming Angel（155 BPM）', () => {
     expect(sections[0]!.bpm).toBeLessThan(158);
   });
 });
+
+describe('カラノワレモノ（140 BPM，开头约 8 秒乐器少、声音轻）', () => {
+  const f = load('karano');
+  const { quick, full } = pipeline(f);
+
+  it('识别在前奏里给出的拍点间隔约 0.5 秒，和主体的 140 BPM 对不上', () => {
+    const intro = f.full.ticks.filter((t) => t > 1 && t < 7);
+    const gap = (intro[intro.length - 1]! - intro[0]!) / (intro.length - 1);
+    expect(60 / gap).toBeLessThan(128);
+  });
+
+  it('轻的前奏不单独算一段速度，整首一段约 140 BPM', () => {
+    expect(averageBpm(quick)).toBeCloseTo(140, 0);
+    const sections = inSong(full, f.duration);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.bpm).toBeCloseTo(140, 0);
+  });
+});

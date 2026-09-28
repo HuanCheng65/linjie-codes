@@ -61,28 +61,35 @@ export async function toMono44k(buffer: AudioBuffer, maxSeconds: number): Promis
   return rendered.getChannelData(0);
 }
 
-/** 波形概览：把整首歌分成 buckets 段，每段取绝对值最大值，归一化到 0–1。 */
+/**
+ * 波形概览：把整首歌分成 buckets 段，每段取响度（RMS），归一化到 0–1。
+ * 压缩得很重的歌大部分时间都接近满幅，直接画出来每根柱子都一样高；这里按整首的中位数调对比度，
+ * 让中位数落在 0.6 左右，前奏、间奏和副歌的起伏才看得出来。
+ */
 export function computePeaks(buffer: AudioBuffer, buckets: number): Float32Array {
-  const peaks = new Float32Array(buckets);
+  const levels = new Float32Array(buckets);
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
   const size = buffer.length / buckets;
-  const stride = Math.max(1, Math.floor(size / 256));
-  let max = 0;
+  const stride = Math.max(1, Math.floor(size / 512));
   for (let b = 0; b < buckets; b++) {
     const start = Math.floor(b * size);
     const end = Math.min(buffer.length, Math.floor((b + 1) * size));
-    let m = 0;
+    let sum = 0;
+    let n = 0;
     for (let i = start; i < end; i += stride) {
-      for (const ch of channels) {
-        const v = Math.abs(ch[i]!);
-        if (v > m) m = v;
-      }
+      for (const ch of channels) sum += ch[i]! * ch[i]!;
+      n += channels.length;
     }
-    peaks[b] = m;
-    if (m > max) max = m;
+    levels[b] = n ? Math.sqrt(sum / n) : 0;
   }
-  if (max > 0) for (let b = 0; b < buckets; b++) peaks[b]! /= max;
-  return peaks;
+  const sorted = Array.from(levels).sort((x, y) => x - y);
+  const top = sorted[Math.floor(0.98 * (sorted.length - 1))] ?? 0;
+  if (top <= 0) return levels;
+  for (let b = 0; b < buckets; b++) levels[b] = Math.min(1, levels[b]! / top);
+  const median = Math.min(1, (sorted[sorted.length >> 1] ?? 0) / top);
+  const gamma = median > 0 && median < 1 ? Math.min(4, Math.max(1, Math.log(0.6) / Math.log(median))) : 1;
+  for (let b = 0; b < buckets; b++) levels[b] = levels[b]! ** gamma;
+  return levels;
 }
 
 export interface Playback {
