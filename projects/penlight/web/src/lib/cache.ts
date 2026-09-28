@@ -2,9 +2,14 @@
 const DB = 'penlight';
 const STORE = 'analysis';
 
+/** 分析流程有变化时加一，旧的缓存就不再使用。 */
+export const CACHE_VERSION = 2;
+
 export interface CachedAnalysis {
-  version: 1;
+  version: number;
   ticks: number[];
+  /** 前 90 秒的拍点。整首分析完之后也留着，用来对齐拍子级别。 */
+  quickTicks?: number[];
   bpm: number;
   confidence: number;
   /** 是否已经分析过整首歌。 */
@@ -25,7 +30,10 @@ export async function cacheGet(key: string): Promise<CachedAnalysis | null> {
     const db = await open();
     return await new Promise((resolve) => {
       const req = db.transaction(STORE).objectStore(STORE).get(key);
-      req.onsuccess = () => resolve((req.result as CachedAnalysis | undefined) ?? null);
+      req.onsuccess = () => {
+        const r = req.result as CachedAnalysis | undefined;
+        resolve(r && r.version === CACHE_VERSION ? r : null);
+      };
       req.onerror = () => resolve(null);
     });
   } catch {

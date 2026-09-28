@@ -232,3 +232,19 @@ export function spliceMap(map: BeatMap, patch: readonly number[], from: number, 
   while (after.length && after[0]! - mid[mid.length - 1]! < 0.6 * p) after.shift();
   return { times: [...before, ...mid, ...after] };
 }
+
+/**
+ * 换一个拍子级别重新取拍：新的第 j 拍落在原表的第 phase + j / factor 拍位置上。
+ * factor = 1.5 表示原来的拍子其实是附点（每 1.5 拍一下），换成真正的拍子；factor = 0.5 表示减半。
+ * 速度变化会跟着原表按比例保留。
+ */
+export function resampleMap(map: BeatMap, factor: number, phase = 0): BeatMap {
+  const last = map.times.length - 1;
+  const times: number[] = [];
+  for (let j = 0; ; j++) {
+    const pos = phase + j / factor;
+    if (pos > last) break;
+    times.push(beatTime(map, pos));
+  }
+  return times.length >= 2 ? { times } : map;
+}

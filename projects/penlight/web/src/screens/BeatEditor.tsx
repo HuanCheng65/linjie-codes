@@ -169,6 +169,22 @@ export function BeatEditor() {
     setSection(null);
   };
 
+  /** 拍子整体落在了反拍上时，往后挪半拍。 */
+  const shiftHalf = () => {
+    const c = useStore.getState().upload;
+    if (!c) return;
+    const t = now();
+    const half = (beatTime(c.map, nearestBeat(c.map, t).index + 1) - beatTime(c.map, nearestBeat(c.map, t).index)) / 2;
+    patch(
+      {
+        map: { times: c.map.times.map((x, i) => x + (c.map.times[i + 1] !== undefined ? (c.map.times[i + 1]! - x) / 2 : half)) },
+        downbeat: c.downbeat + half,
+      },
+      true,
+    );
+    showToast('已把拍子整体挪了半拍');
+  };
+
   const setDownbeat = () => {
     const t = beatTime(map, nearestBeat(map, now()).index);
     patch({ downbeat: t, downbeatManual: true });
@@ -420,11 +436,16 @@ export function BeatEditor() {
             <Button size="sm" variant="secondary" icon={Drum} onClick={setDownbeat}>
               这一拍是小节第一拍
             </Button>
+            <Button size="sm" variant="secondary" onClick={shiftHalf}>
+              错开半拍
+            </Button>
             <Button size="sm" variant="secondary" icon={Hand} onClick={() => { player.stop(); setPlaying(false); setTapping(true); }}>
               跟着敲
             </Button>
           </div>
-          <p className={styles.hint}>高音的咔哒声是小节第一拍。不对的话，播放到正确的第一拍时点左边按钮。自动识别完全对不上时，用「跟着敲」手动标这一段的拍子。</p>
+          <p className={styles.hint}>
+            高音的咔哒声是小节第一拍，不对的话播放到正确的第一拍时点「这一拍是小节第一拍」。咔哒声都落在两个鼓点中间，就点「错开半拍」。自动识别完全对不上时，用「跟着敲」手动标这一段的拍子。
+          </p>
         </Card>
       </Reveal>
 
