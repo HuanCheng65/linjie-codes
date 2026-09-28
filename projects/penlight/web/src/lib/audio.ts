@@ -1,4 +1,4 @@
-import { beatTime, firstBeatAtOrAfter, type BeatGrid } from '@linjie/penlight-core';
+import { beatTime, firstBeatAtOrAfter, isBarLine, type BeatMap } from '@linjie/penlight-core';
 
 let context: AudioContext | null = null;
 
@@ -29,9 +29,24 @@ export function unlockAudio(): Promise<void> {
   return ctx.state === 'running' ? Promise.resolve() : ctx.resume();
 }
 
-export async function decodeAudioFile(file: File): Promise<AudioBuffer> {
-  const data = await file.arrayBuffer();
-  return audioContext().decodeAudioData(data);
+export function decodeAudio(data: ArrayBuffer): Promise<AudioBuffer> {
+  // decodeAudioData 会接管传入的 ArrayBuffer，传一份拷贝，原件留着算指纹
+  return audioContext().decodeAudioData(data.slice(0));
+}
+
+/** 低于 150 Hz 的部分（底鼓、贝斯），降采样到 4 kHz 单声道，用来找小节第一拍。 */
+export async function lowBand(buffer: AudioBuffer): Promise<{ samples: Float32Array; sampleRate: number }> {
+  const sampleRate = 4000;
+  const offline = new OfflineAudioContext(1, Math.ceil(buffer.duration * sampleRate), sampleRate);
+  const src = offline.createBufferSource();
+  src.buffer = buffer;
+  const f = offline.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = 150;
+  src.connect(f).connect(offline.destination);
+  src.start();
+  const rendered = await offline.startRendering();
+  return { samples: rendered.getChannelData(0), sampleRate };
 }
 
 /** 截取前 maxSeconds 秒，混成 44.1 kHz 单声道，给节拍识别用。 */
@@ -78,34 +93,68 @@ export interface Playback {
   onended: (() => void) | null;
 }
 
-export function playBuffer(
-  buffer: AudioBuffer,
-  from: number,
-  until: number,
-  delay = 0.08,
-  volume = 1,
-): Playback {
+export interface PlayOptions {
+  /** 多久之后开始（秒）。 */
+  delay?: number;
+  volume?: number;
+  /** 结尾淡出的秒数。 */
+  fadeOut?: number;
+  /** 要响节拍器的歌曲时间。 */
+  clicks?: { time: number; accent: boolean }[];
+}
+
+/**
+ * 播放 [from, until] 这一段。from 可以是负数：音频开始之前先空着，只响节拍器。
+ */
+export function playBuffer(buffer: AudioBuffer, from: number, until: number, options: PlayOptions = {}): Playback {
   const ctx = audioContext();
+  const volume = options.volume ?? 1;
   const gain = ctx.createGain();
   gain.gain.value = volume;
   gain.connect(ctx.destination);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.connect(gain);
-  const startCtx = ctx.currentTime + delay;
-  src.start(startCtx, from, Math.max(0, until - from));
+  const startCtx = ctx.currentTime + (options.delay ?? 0.08);
+  const toCtx = (songTime: number) => startCtx + songTime - from;
+  const audioFrom = Math.max(0, from);
+  src.start(toCtx(audioFrom), audioFrom, Math.max(0, until - audioFrom));
+
+  const fade = options.fadeOut ?? 0;
+  if (fade > 0) {
+    gain.gain.setValueAtTime(volume, toCtx(until - fade));
+    gain.gain.linearRampToValueAtTime(0, toCtx(until));
+  }
+
+  const clickNodes: AudioScheduledSourceNode[] = [];
+  if (options.clicks?.length) {
+    const bus = ctx.createGain();
+    bus.gain.value = 0.6;
+    bus.connect(ctx.destination);
+    for (const c of options.clicks) {
+      const when = toCtx(c.time);
+      if (when > ctx.currentTime) clickNodes.push(scheduleClick(ctx, bus, when, c.accent));
+    }
+  }
 
   const playback: Playback = {
     startCtx,
     playFrom: from,
     onended: null,
-    stop(fade = 0.12) {
+    stop(fadeTime = 0.12) {
       const now = ctx.currentTime;
       gain.gain.cancelScheduledValues(now);
       gain.gain.setValueAtTime(gain.gain.value, now);
-      gain.gain.linearRampToValueAtTime(0, now + fade);
+      gain.gain.linearRampToValueAtTime(0, now + fadeTime);
+      for (const n of clickNodes) {
+        try {
+          n.stop();
+        } catch {
+          // 已经响完
+        }
+      }
       try {
-        src.stop(now + fade + 0.02);
+        src.stop(now + fadeTime + 0.02);
       } catch {
         // 已经停了
       }
@@ -155,14 +204,15 @@ export class SongClock {
   }
 }
 
-function scheduleClick(ctx: AudioContext, destination: AudioNode, when: number): AudioScheduledSourceNode {
+export function scheduleClick(ctx: AudioContext, destination: AudioNode, when: number, accent = false): AudioScheduledSourceNode {
   const osc = ctx.createOscillator();
   const env = ctx.createGain();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(1760, when);
-  osc.frequency.exponentialRampToValueAtTime(1200, when + 0.04);
+  const f = accent ? 2200 : 1600;
+  osc.frequency.setValueAtTime(f, when);
+  osc.frequency.exponentialRampToValueAtTime(f * 0.7, when + 0.04);
   env.gain.setValueAtTime(0.0001, when);
-  env.gain.exponentialRampToValueAtTime(0.7, when + 0.002);
+  env.gain.exponentialRampToValueAtTime(accent ? 0.9 : 0.6, when + 0.002);
   env.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
   osc.connect(env).connect(destination);
   osc.start(when);
@@ -171,20 +221,23 @@ function scheduleClick(ctx: AudioContext, destination: AudioNode, when: number):
 }
 
 /**
- * 节拍器叠加原曲的试听。节拍网格随时可能被微调，每次调度都重新读取，
- * 网格一变就撤掉还没响的点击声重新排。
+ * 校对节拍页的播放器：从任意位置播放，可以叠加节拍器（小节第一拍音高更高）。
+ * 节拍表随时可能被修改，每次调度都重新读取，一变就撤掉还没响的点击声重新排。
  */
-export class MetronomePreview {
+export class EditorPlayer {
   private playback: Playback | null = null;
   private timer = 0;
   private scheduled = new Map<number, AudioScheduledSourceNode>();
-  private gridKey = '';
+  private mapKey = '';
   private clickBus: GainNode | null = null;
+  private until = Infinity;
+  metronome = true;
   onended: (() => void) | null = null;
 
   constructor(
     private readonly buffer: AudioBuffer,
-    private readonly getGrid: () => BeatGrid,
+    private readonly getMap: () => BeatMap,
+    private readonly getDownbeat: () => number,
   ) {}
 
   get playing(): boolean {
@@ -198,14 +251,14 @@ export class MetronomePreview {
     return this.playback.playFrom + ctx.currentTime - (ctx.outputLatency || 0) - this.playback.startCtx;
   }
 
-  start(from: number, length: number): void {
+  play(from: number, until = this.buffer.duration): void {
     this.stop();
     const ctx = audioContext();
-    const until = Math.min(this.buffer.duration, from + length);
+    this.until = Math.min(this.buffer.duration, until);
     this.clickBus = ctx.createGain();
     this.clickBus.gain.value = 0.55;
     this.clickBus.connect(ctx.destination);
-    const playback = playBuffer(this.buffer, from, until, 0.08, 0.8);
+    const playback = playBuffer(this.buffer, Math.max(0, from), this.until, { delay: 0.06, volume: 0.85 });
     playback.onended = () => {
       if (this.playback === playback) {
         this.cleanup();
@@ -225,6 +278,14 @@ export class MetronomePreview {
 
   private cleanup(): void {
     window.clearInterval(this.timer);
+    this.clearClicks();
+    const bus = this.clickBus;
+    if (bus) window.setTimeout(() => bus.disconnect(), 200);
+    this.clickBus = null;
+    this.playback = null;
+  }
+
+  private clearClicks(): void {
     for (const node of this.scheduled.values()) {
       try {
         node.stop();
@@ -233,10 +294,6 @@ export class MetronomePreview {
       }
     }
     this.scheduled.clear();
-    const bus = this.clickBus;
-    if (bus) window.setTimeout(() => bus.disconnect(), 200);
-    this.clickBus = null;
-    this.playback = null;
   }
 
   private tick(): void {
@@ -244,36 +301,25 @@ export class MetronomePreview {
     const bus = this.clickBus;
     if (!playback || !bus) return;
     const ctx = audioContext();
-    const grid = this.getGrid();
-    const key = `${grid.bpm}:${grid.firstBeat}`;
-    if (key !== this.gridKey) {
-      this.gridKey = key;
-      for (const [, node] of this.scheduled) {
-        try {
-          node.stop();
-        } catch {
-          // 已经响完
-        }
-      }
-      this.scheduled.clear();
+    const map = this.getMap();
+    const down = this.getDownbeat();
+    const key = `${map.times.length}:${map.times[0]}:${map.times[map.times.length - 1]}:${down}:${this.metronome}`;
+    if (key !== this.mapKey) {
+      this.mapKey = key;
+      this.clearClicks();
     }
+    if (!this.metronome) return;
 
     const toCtx = (songTime: number) => playback.startCtx + songTime - playback.playFrom;
     const nowSong = playback.playFrom + ctx.currentTime - playback.startCtx;
-    const horizon = nowSong + 0.15;
-    for (let i = firstBeatAtOrAfter(grid, Math.max(playback.playFrom, nowSong)); ; i++) {
-      const t = beatTime(grid, i);
+    const horizon = Math.min(this.until, nowSong + 0.15);
+    for (let i = firstBeatAtOrAfter(map, Math.max(playback.playFrom, nowSong)); ; i++) {
+      const t = beatTime(map, i);
       if (t > horizon) break;
       if (this.scheduled.has(i)) continue;
       const when = toCtx(t);
       if (when < ctx.currentTime) continue;
-      this.scheduled.set(i, scheduleClick(ctx, bus, when));
-    }
-    for (const [i, node] of this.scheduled) {
-      if (toCtx(beatTime(grid, i)) < ctx.currentTime - 0.5) {
-        this.scheduled.delete(i);
-        node.disconnect();
-      }
+      this.scheduled.set(i, scheduleClick(ctx, bus, when, isBarLine(map, i, down)));
     }
   }
 }

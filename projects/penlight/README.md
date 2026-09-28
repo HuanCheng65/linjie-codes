@@ -18,3 +18,10 @@ pnpm penlight dev          # 本地开发
 pnpm penlight dev:https    # 局域网 HTTPS，手机上测传感器
 pnpm --filter "./projects/penlight/**" test
 ```
+
+## 待办
+
+- [ ] 收集真机录制数据：有快有慢（重点验证半拍档）、换动作（前后 / 左右 / 小幅手腕）、走路、故意乱挥、iPhone
+- [ ] 用新数据回放调参，把每份数据写成回归测试（见 `core/recordings/`）
+- [x] 录制数据里记下设备型号（Android Chromium 用 Client Hints，iPhone 记屏幕尺寸）
+- [ ] 用几首变速的歌实测：现场版、中途提速的歌、带停顿的歌

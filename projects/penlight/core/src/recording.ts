@@ -1,6 +1,17 @@
 import type { Chart } from './chart';
 import { SwingDetector, type MotionFrame, type MotionSourceKind, type SwingDirection, type Vec3 } from './detector';
+import { beatPosition, uniformMap } from './grid';
 import { Judge, type GameResult } from './judge';
+
+/** 录制时的设备信息。Android 上的 Chromium 能拿到真实型号，iPhone 只能记屏幕尺寸。 */
+export interface DeviceInfo {
+  model?: string;
+  brand?: string;
+  platform?: string;
+  platformVersion?: string;
+  mobile?: boolean;
+  screen: { width: number; height: number; dpr: number };
+}
 
 /**
  * 一局游戏的原始数据：传感器样本（或点屏幕的时刻）加上谱面。
@@ -8,9 +19,11 @@ import { Judge, type GameResult } from './judge';
  */
 export interface Recording {
   format: 'penlight-recording';
-  version: 1;
+  /** 1：谱面是恒定速度（bpm + firstBeat）；2：谱面是逐拍时间表，并带设备信息。 */
+  version: 1 | 2;
   createdAt: string;
   userAgent: string;
+  device?: DeviceInfo;
   inputMode: 'motion' | 'tap';
   sensitivity: number;
   /** 录制时用的检测来源。 */
@@ -56,9 +69,27 @@ export interface Replay {
   result: GameResult;
 }
 
+/** 旧版录制的谱面是 { bpm, firstBeat }，换成逐拍时间表，拍号跟着平移。 */
+export function normalizeChart(chart: Chart): Chart {
+  const g = chart.grid as unknown as { bpm?: number; firstBeat?: number; times?: number[] };
+  if (g.times) return chart;
+  const map = uniformMap(g.bpm!, g.firstBeat!, Math.min(0, chart.playFrom) - 20, chart.playUntil + 20);
+  const shift = Math.round(beatPosition(map, g.firstBeat!));
+  return {
+    ...chart,
+    grid: map,
+    startBeat: chart.startBeat + shift,
+    endBeat: chart.endBeat + shift,
+    sections: chart.sections.map((s) => ({ ...s, beat: s.beat + shift })),
+    restBeats: chart.restBeats?.map((b) => b + shift),
+    clickBeats: chart.clickBeats?.map((b) => b + shift),
+  };
+}
+
 /** 用当前的检测和判定重新跑一遍录制的数据。 */
 export function replay(rec: Recording, options: { sensitivity?: number } = {}): Replay {
-  const judge = new Judge(rec.chart);
+  const chart = normalizeChart(rec.chart);
+  const judge = new Judge(chart);
   const swings: ReplayedSwing[] = [];
 
   if (rec.inputMode === 'tap') {

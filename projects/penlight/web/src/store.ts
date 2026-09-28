@@ -1,6 +1,6 @@
 import {
   DEFAULT_SENSITIVITY,
-  type BeatGrid,
+  type BeatMap,
   type Chart,
   type GameResult,
   type Recording,
@@ -23,9 +23,19 @@ export interface Song {
 
 export interface UploadState {
   song: AnalyzedSong;
-  grid: BeatGrid;
-  segmentFrom: number;
-  segmentLength: number;
+  /** 当前使用的节拍表（可能被用户改过）。 */
+  map: BeatMap;
+  /** 识别出来的节拍表，「还原」时用。 */
+  detected: BeatMap;
+  /** 某个小节第一拍的时间。 */
+  downbeat: number;
+  downbeatManual: boolean;
+  selection: { start: number; end: number };
+  /** partial：只分析了前 90 秒，整首还在后台分析；full：整首分析完；failed：后台分析失败。 */
+  analysis: 'partial' | 'full' | 'failed';
+  /** 整首分析完成时用户已经改过节拍，先放在这里，等用户决定要不要用。 */
+  pendingFull: BeatMap | null;
+  edited: boolean;
 }
 
 export interface ResultState {
@@ -52,8 +62,6 @@ interface State {
   lastResult: ResultState | null;
   toast: { id: number; text: string } | null;
 }
-
-export const SEGMENT_LENGTH = 60;
 
 export const useStore = create<State>(() => ({
   stack: ['home'],
