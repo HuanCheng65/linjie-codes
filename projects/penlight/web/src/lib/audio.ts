@@ -231,6 +231,8 @@ export class EditorPlayer {
   private mapKey = '';
   private clickBus: GainNode | null = null;
   private until = Infinity;
+  /** 播放开始时歌曲时间和 performance.now() 的对应关系，用来算平滑的播放位置。 */
+  private anchor: { perf: number; song: number } | null = null;
   metronome = true;
   onended: (() => void) | null = null;
 
@@ -244,11 +246,14 @@ export class EditorPlayer {
     return this.playback !== null;
   }
 
-  /** 当前播放到的歌曲时间（秒），没在播放时为 null。 */
+  /**
+   * 当前播放到的歌曲时间（秒），没在播放时为 null。
+   * AudioContext 的时钟是一块一块跳的（手机上一次 10–20 ms），画面跟着它走会一顿一顿，
+   * 这里用播放开始时对准的 performance.now() 推算，试听只有几秒，两个时钟的漂移可以忽略。
+   */
   position(): number | null {
-    if (!this.playback) return null;
-    const ctx = audioContext();
-    return this.playback.playFrom + ctx.currentTime - (ctx.outputLatency || 0) - this.playback.startCtx;
+    if (!this.playback || !this.anchor) return null;
+    return this.anchor.song + (performance.now() - this.anchor.perf) / 1000;
   }
 
   play(from: number, until = this.buffer.duration): void {
@@ -266,6 +271,9 @@ export class EditorPlayer {
       }
     };
     this.playback = playback;
+    // 歌曲时间 from 在 startCtx 响起，再加上输出延迟才被听到
+    const latency = ctx.outputLatency || ctx.baseLatency || 0;
+    this.anchor = { perf: performance.now() + (playback.startCtx - ctx.currentTime + latency) * 1000, song: Math.max(0, from) };
     this.tick();
     this.timer = window.setInterval(() => this.tick(), 25);
   }
@@ -283,6 +291,7 @@ export class EditorPlayer {
     if (bus) window.setTimeout(() => bus.disconnect(), 200);
     this.clickBus = null;
     this.playback = null;
+    this.anchor = null;
   }
 
   private clearClicks(): void {
