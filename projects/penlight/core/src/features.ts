@@ -1,4 +1,5 @@
-import { beatPosition, beatTime, firstBeatAtOrAfter, lastBeatAtOrBefore, nearestBar, tempoSections, type BeatMap } from './grid';
+import { buildBeatMap } from './fit';
+import { beatPosition, beatTime, firstBeatAtOrAfter, lastBeatAtOrBefore, nearestBar, resampleMap, tempoSections, type BeatMap } from './grid';
 
 /**
  * 音频包络：每 hop 秒一个值（均方根）。手机端解码后算一次，之后的分析都在这上面做。
@@ -151,4 +152,170 @@ export function sectionBreaks(map: BeatMap, env: Envelope, fromBeat: number, toB
     out.push(last);
   }
   return out;
+}
+
+/**
+ * 换拍子级别时可能的对齐方式（以原来的拍为单位）。
+ * 比如 1.5 倍：新拍子每 2/3 个原拍一下，可以从原拍点开始，也可以错开 1/3。
+ */
+const PHASES: Record<number, number[]> = { 0.5: [0, 1], 2: [0], 1.5: [0, 1 / 3], [2 / 3]: [0, 0.5, 1] };
+
+/** 起音强度：能量对数的正向差分（能量突然变大的地方大）。 */
+export function onsetEnvelope(env: Envelope): Envelope {
+  const v = env.values;
+  const out = new Float32Array(v.length);
+  for (let i = 1; i < v.length; i++) out[i] = Math.max(0, Math.log(1e-4 + v[i]!) - Math.log(1e-4 + v[i - 1]!));
+  return { hop: env.hop, values: out };
+}
+
+/** 起音强度在某个速度（一拍的间隔）上的自相关，已按方差归一化。越大说明音乐越按这个间隔重复。 */
+export function tempoSalience(onset: Envelope, bpm: number): number {
+  const v = onset.values;
+  const n = v.length;
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += v[i]!;
+  mean /= n;
+  let variance = 0;
+  for (let i = 0; i < n; i++) variance += (v[i]! - mean) ** 2;
+  variance /= n;
+  if (variance === 0) return 0;
+  const lag = 60 / bpm / onset.hop;
+  const at = (L: number) => {
+    let s = 0;
+    for (let i = 0; i + L < n; i++) s += (v[i]! - mean) * (v[i + L]! - mean);
+    return s / Math.max(1, n - L);
+  };
+  const l0 = Math.floor(lag);
+  const f = lag - l0;
+  return ((1 - f) * at(l0) + f * at(l0 + 1)) / variance;
+}
+
+/** 某条节拍表的拍点上平均的起音强度（前后各一格取最大），用来比较同一速度下哪种对齐更准。 */
+function gridOnset(onset: Envelope, times: number[], from: number, to: number): number {
+  let s = 0;
+  let n = 0;
+  for (const t of times) {
+    if (t < from || t > to) continue;
+    const k = Math.round(t / onset.hop);
+    let m = 0;
+    for (let d = -1; d <= 1; d++) m = Math.max(m, onset.values[k + d] ?? 0);
+    s += m;
+    n++;
+  }
+  return n ? s / n : 0;
+}
+
+/**
+ * 检查识别出的拍子是不是其实是附点节奏（每 1.5 拍一下）或者三连音级别：
+ * 在「1.5 倍」或「2/3 倍」速度上，起音的自相关明显比原速度强（多 30% 以上），就换过去。
+ * 快一倍、慢一半的情况两边往往一样强，分不清，不在这里改。
+ */
+export function correctMetricalLevel(
+  map: BeatMap,
+  onset: Envelope,
+  duration: number,
+  lowOnset?: Envelope,
+): { map: BeatMap; factor: number } {
+  const t = map.times.filter((x) => x >= 0 && x <= duration);
+  if (t.length < 16) return { map, factor: 1 };
+  const bpm = (60 * (t.length - 1)) / (t[t.length - 1]! - t[0]!);
+  const base = tempoSalience(onset, bpm);
+  let best = { factor: 1, score: base };
+  for (const factor of [1.5, 2 / 3]) {
+    const s = tempoSalience(onset, bpm * factor);
+    if (s > 0.1 && s > base * 1.3 && s > best.score) best = { factor, score: s };
+  }
+  if (best.factor === 1) return { map, factor: 1 };
+  // 新拍子可能和原来的拍点错开，几种对齐方式里取拍点上起音最强的
+  const phases = PHASES[best.factor] ?? [0];
+  let chosen = resampleMap(map, best.factor, 0);
+  let chosenScore = -Infinity;
+  for (const ph of phases) {
+    const m = resampleMap(map, best.factor, ph);
+    // 全频段和低频（底鼓）一起看：八分音符很密的歌只看全频段分不清正拍和反拍
+    const s = gridOnset(onset, m.times, 0, duration) + (lowOnset ? gridOnset(lowOnset, m.times, 0, duration) : 0);
+    if (s > chosenScore) {
+      chosenScore = s;
+      chosen = m;
+    }
+  }
+  return { map: chosen, factor: best.factor };
+}
+
+/**
+ * 让整首分析的结果和先分析的前 90 秒保持同一个拍子级别（识别有时会在两次分析里一次给 83、一次给 166）。
+ * 在重叠的时间里比较两边的平均速度，差两倍、一半、1.5 倍时按参考结果换级别，并选和参考拍点最对齐的相位。
+ */
+export function alignLevel(map: BeatMap, reference: BeatMap, from: number, to: number): BeatMap {
+  const inRange = (m: BeatMap) => m.times.filter((x) => x >= from && x <= to);
+  const a = inRange(map);
+  const b = inRange(reference);
+  if (a.length < 8 || b.length < 8) return map;
+  const bpmA = (60 * (a.length - 1)) / (a[a.length - 1]! - a[0]!);
+  const bpmB = (60 * (b.length - 1)) / (b[b.length - 1]! - b[0]!);
+  const want = bpmB / bpmA;
+  const factor = [0.5, 2 / 3, 1, 1.5, 2].reduce((x, y) => (Math.abs(Math.log(y / want)) < Math.abs(Math.log(x / want)) ? y : x));
+  if (factor === 1 || Math.abs(Math.log(factor / want)) > 0.06) return map;
+  // 选和参考拍点平均距离最小的相位
+  let best = map;
+  let bestErr = Infinity;
+  for (const phase of PHASES[factor] ?? [0]) {
+    const pts = inRange(resampleMap(map, factor, phase));
+    let err = 0;
+    for (const t of b) {
+      let d = Infinity;
+      for (const x of pts) d = Math.min(d, Math.abs(x - t));
+      err += d;
+    }
+    if (err < bestErr) {
+      bestErr = err;
+      best = resampleMap(map, factor, phase);
+    }
+  }
+  return best;
+}
+
+
+function medianOf(values: Float32Array): number {
+  const sorted = Array.from(values).sort((a, b) => a - b);
+  return sorted[sorted.length >> 1] ?? 0;
+}
+
+/** 某个时间前后 half 秒的平均能量。 */
+function energyAround(env: Envelope, t: number, half = 0.5): number {
+  return meanIn(env, Math.max(0, t - half), t + half);
+}
+
+/**
+ * 有声音的范围：前后 0.5 秒平均能量不低于整首中位数 threshold 倍的第一个和最后一个时刻。
+ * 很多音频结尾有一段只剩很轻尾音或者空白，「整首」和推荐选段都以这里为准。
+ */
+export function activeRange(env: Envelope, duration: number, threshold = 0.1): { start: number; end: number } {
+  const floor = threshold * medianOf(env.values);
+  const step = env.hop * 5;
+  let start = 0;
+  while (start < duration && energyAround(env, start) < floor) start += step;
+  let end = duration;
+  while (end > start && energyAround(env, end) < floor) end -= step;
+  return { start: Math.max(0, start - 0.25), end: Math.min(duration, end + 0.25) };
+}
+
+/**
+ * 从节拍识别的拍点得到最终的节拍表：去掉没声音处的拍点，整理成逐拍的表，检查是不是附点节奏的级别，
+ * 有参考结果（先分析的前 90 秒）时和它保持同一个级别。手机端和测试共用这一条流程。
+ */
+export function beatMapFromTicks(
+  ticks: number[],
+  o: { duration: number; env: Envelope; low?: Envelope; reference?: { map: BeatMap; until: number } },
+): BeatMap {
+  const onset = onsetEnvelope(o.env);
+  const lowOnset = o.low ? onsetEnvelope(o.low) : undefined;
+  // 声音很轻的地方（结尾尾音、空白、停顿）识别器还会按惯性继续给拍点，这些不能用来判断速度，
+  // 去掉之后按前后的速度补
+  const floor = 0.1 * medianOf(o.env.values);
+  const heard = ticks.filter((t) => energyAround(o.env, t) >= floor);
+  let map: BeatMap = buildBeatMap(heard.length >= 8 ? heard : ticks, { duration: o.duration });
+  map = correctMetricalLevel(map, onset, o.duration, lowOnset).map;
+  if (o.reference) map = alignLevel(map, o.reference.map, 0, o.reference.until);
+  return map;
 }

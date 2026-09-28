@@ -1,5 +1,6 @@
 import {
-  buildBeatMap,
+  activeRange,
+  beatMapFromTicks,
   envelopeOf,
   estimateDownbeat,
   recommendSelection,
@@ -9,7 +10,7 @@ import {
 } from '@linjie/penlight-core';
 import type { AnalyzeResponse } from '../workers/analyze.worker';
 import { computePeaks, decodeAudio, lowBand, toMono44k } from './audio';
-import { cacheGet, cachePut, fingerprint } from './cache';
+import { CACHE_VERSION, cacheGet, cachePut, fingerprint } from './cache';
 
 /** 先分析前 90 秒，马上能用；整首歌在后台接着分析。 */
 export const QUICK_SECONDS = 90;
@@ -28,6 +29,8 @@ export interface AnalyzedSong {
   env: Envelope;
   /** 低频包络，用来找小节第一拍。 */
   low: Envelope;
+  /** 有声音的范围。结尾常有一段只剩很轻的尾音或空白，「整首」和推荐选段都以这里为准。 */
+  active: { start: number; end: number };
 }
 
 export interface Analysis {
@@ -62,9 +65,12 @@ function runWorker(pcm: Float32Array): Promise<{ bpm: number; confidence: number
   }).finally(() => worker.terminate());
 }
 
-function mapFrom(ticks: number[], duration: number): BeatMap {
+function mapFrom(
+  ticks: number[],
+  o: { duration: number; env: Envelope; low: Envelope; reference?: { map: BeatMap; until: number } },
+): BeatMap {
   if (ticks.length < 8) throw new AnalyzeError('没识别出稳定的节拍', '换一首鼓点清楚、节奏稳定的歌，或者用「跟着敲」手动标拍子。');
-  return buildBeatMap(ticks, { duration });
+  return beatMapFromTicks(ticks, o);
 }
 
 export async function analyzeFile(file: File, onStage: (stage: AnalyzeStage) => void): Promise<Analysis> {
@@ -96,32 +102,37 @@ export async function analyzeFile(file: File, onStage: (stage: AnalyzeStage) => 
     peaks: computePeaks(buffer, 1200),
     env,
     low,
+    active: activeRange(env, duration),
   };
 
   const finish = (map: BeatMap, complete: boolean, full: Promise<BeatMap> | null): Analysis => {
-    const downbeat = estimateDownbeat(map, low, duration);
-    return { song, map, downbeat, selection: recommendSelection(map, env, downbeat, duration, 60), complete, full };
+    const downbeat = estimateDownbeat(map, low, song.active.end);
+    return { song, map, downbeat, selection: recommendSelection(map, env, downbeat, song.active.end, 60), complete, full };
   };
 
+  const features = { duration, env, low };
   const cached = await cacheGet(hash);
   if (cached?.full) {
     onStage('fit');
-    return finish(mapFrom(cached.ticks, duration), true, null);
+    const quickTicks = cached.quickTicks;
+    const reference = quickTicks ? { map: mapFrom(quickTicks, features), until: Math.min(QUICK_SECONDS, duration) } : undefined;
+    return finish(mapFrom(cached.ticks, { ...features, reference }), true, null);
   }
 
   onStage('detect');
   const quickLen = Math.min(mono.length, QUICK_SECONDS * 44100);
-  const quick = cached ?? { ...(await runWorker(mono.slice(0, quickLen))), version: 1 as const, full: duration <= QUICK_SECONDS };
+  const quick = cached ?? { ...(await runWorker(mono.slice(0, quickLen))), version: CACHE_VERSION, full: duration <= QUICK_SECONDS };
   if (!cached) void cachePut(hash, quick);
 
   onStage('fit');
-  const map = mapFrom(quick.ticks, duration);
+  const map = mapFrom(quick.ticks, features);
   if (quick.full) return finish(map, true, null);
 
-  // 整首歌在后台分析，分析完存进缓存
+  // 整首歌在后台分析，分析完存进缓存。整首的结果有时会和前 90 秒差一倍，按前 90 秒的级别对齐
+  const reference = { map, until: QUICK_SECONDS };
   const full = runWorker(mono).then(async (r) => {
-    await cachePut(hash, { version: 1, ticks: r.ticks, bpm: r.bpm, confidence: r.confidence, full: true });
-    return mapFrom(r.ticks, duration);
+    await cachePut(hash, { version: CACHE_VERSION, ticks: r.ticks, quickTicks: quick.ticks, bpm: r.bpm, confidence: r.confidence, full: true });
+    return mapFrom(r.ticks, { ...features, reference });
   });
   return finish(map, false, full);
 }

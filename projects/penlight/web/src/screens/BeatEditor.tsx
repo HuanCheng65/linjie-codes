@@ -91,8 +91,12 @@ export function BeatEditor() {
   const { song, map, selection } = u;
   const now = () => player.position() ?? cursor.current;
 
-  const sections = tempoSections(map).filter((s) => s.endTime > 0 && s.startTime < song.duration);
+  // 只看有声音的范围，结尾尾音和空白里的拍子是延伸出来的，不算一段
+  const sections = tempoSections(map).filter((s) => s.endTime > song.active.start && s.startTime < song.active.end - 2);
   const varying = sections.length > 1;
+  const mainSection = sections.reduce((a, b) => (b.endBeat - b.startBeat > a.endBeat - a.startBeat ? b : a), sections[0]!);
+  // 只有开头或结尾速度不同（比如结尾渐慢），整首大部分还是一个速度
+  const edgesOnly = varying && sections.every((x, i) => x === mainSection || i === 0 || i === sections.length - 1);
   const activeSection = varying && section !== null ? sections[section] : undefined;
   const inSelection = map.times.filter((t) => t >= selection.start && t <= selection.end);
   const selectionBpm = averageBpm(inSelection.length > 2 ? { times: inSelection } : map);
@@ -166,6 +170,22 @@ export function BeatEditor() {
     setSection(null);
   };
 
+  /** 拍子整体落在了反拍上时，往后挪半拍。 */
+  const shiftHalf = () => {
+    const c = useStore.getState().upload;
+    if (!c) return;
+    const t = now();
+    const half = (beatTime(c.map, nearestBeat(c.map, t).index + 1) - beatTime(c.map, nearestBeat(c.map, t).index)) / 2;
+    patch(
+      {
+        map: { times: c.map.times.map((x, i) => x + (c.map.times[i + 1] !== undefined ? (c.map.times[i + 1]! - x) / 2 : half)) },
+        downbeat: c.downbeat + half,
+      },
+      true,
+    );
+    showToast('已把拍子整体挪了半拍');
+  };
+
   const setDownbeat = () => {
     const t = beatTime(map, nearestBeat(map, now()).index);
     patch({ downbeat: t, downbeatManual: true });
@@ -231,7 +251,15 @@ export function BeatEditor() {
           <p className={styles.songMeta}>
             <span className="num">{formatTime(song.duration)}</span>
             <span>·</span>
-            <span>{varying ? `变速 ${sections.length} 段` : <><span className="num">{formatBpm(averageBpm(map))}</span> BPM</>}</span>
+            <span>
+              {varying && !edgesOnly ? (
+                `变速 ${sections.length} 段`
+              ) : (
+                <>
+                  <span className="num">{formatBpm(varying ? mainSection.bpm : averageBpm(map))}</span> BPM{edgesOnly ? ' · 首尾速度不同' : ''}
+                </>
+              )}
+            </span>
             {u.analysis === 'partial' && (
               <span className={styles.analyzing}>
                 <Spinner size={12} /> 正在分析后半段节拍
@@ -339,11 +367,11 @@ export function BeatEditor() {
               size="sm"
               variant="ghost"
               icon={Sparkles}
-              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.duration, 60))}
+              onClick={() => setSelection(recommendSelection(map, song.env, u.downbeat, song.active.end, 60))}
             >
               推荐副歌
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelection({ start: snapToBar(u, 0, 'start'), end: song.duration })}>
+            <Button size="sm" variant="ghost" onClick={() => setSelection({ start: snapToBar(u, song.active.start, 'start'), end: song.active.end })}>
               整首
             </Button>
           </div>
@@ -363,8 +391,13 @@ export function BeatEditor() {
         >
           {varying ? (
             <>
-              <p className={styles.hint}>这首歌中途变速，节拍已经按段对齐。某一段听起来快了一倍或慢了一半，就选中那一段再点 ½ 或 ×2。</p>
-              <TempoStrip sections={sections} duration={song.duration} selected={section} onSelect={setSection} />
+              <p className={styles.hint}>
+                {edgesOnly
+                  ? '这首歌开头或结尾的速度和中间不一样（比如结尾渐慢），节拍已经跟着对齐。'
+                  : '这首歌中途变速，节拍已经按段对齐。'}
+                某一段听起来快了一倍或慢了一半，就选中那一段再点 ½ 或 ×2。
+              </p>
+              <TempoStrip sections={sections} duration={song.active.end} selected={section} onSelect={setSection} />
             </>
           ) : null}
           <div className={styles.tempo}>
@@ -404,11 +437,16 @@ export function BeatEditor() {
             <Button size="sm" variant="secondary" icon={Drum} onClick={setDownbeat}>
               这一拍是小节第一拍
             </Button>
+            <Button size="sm" variant="secondary" onClick={shiftHalf}>
+              错开半拍
+            </Button>
             <Button size="sm" variant="secondary" icon={Hand} onClick={() => { player.stop(); setPlaying(false); setTapping(true); }}>
               跟着敲
             </Button>
           </div>
-          <p className={styles.hint}>高音的咔哒声是小节第一拍。不对的话，播放到正确的第一拍时点左边按钮。自动识别完全对不上时，用「跟着敲」手动标这一段的拍子。</p>
+          <p className={styles.hint}>
+            高音的咔哒声是小节第一拍，不对的话播放到正确的第一拍时点「这一拍是小节第一拍」。咔哒声都落在两个鼓点中间，就点「错开半拍」。自动识别完全对不上时，用「跟着敲」手动标这一段的拍子。
+          </p>
         </Card>
       </Reveal>
 

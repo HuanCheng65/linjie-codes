@@ -66,6 +66,66 @@ describe('buildBeatMap', () => {
     }
   });
 
+  it('尾奏拍点又稀又乱时不算变速，结尾按主段落的速度延伸', () => {
+    const main = uniform(166, 0.4, 740); // 约 4 分 27 秒
+    const last = main[main.length - 1]!;
+    // 尾奏 20 秒：延音、淡出，识别只给出几个间隔很大的拍点
+    const outro: number[] = [];
+    for (let t = last + 1.1; t < last + 20; t += 1.0 + ((outro.length * 37) % 7) / 10) outro.push(t);
+    const m = buildBeatMap(jittered([...main, ...outro], 0.006, 12), { duration: last + 21 });
+    const sections = tempoSections(m).filter((x) => x.endTime > 0 && x.startTime < last + 21);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.bpm).toBeCloseTo(166, 0);
+    const p = 60 / 166;
+    const pos = beatPosition(m, last + 10 * p);
+    expect(Math.abs(pos - Math.round(pos)) * p).toBeLessThan(0.01);
+  });
+
+  it('抒情歌结尾真的渐慢：拍点规律，保留下来', () => {
+    const times: number[] = [];
+    let t = 0.4;
+    for (let i = 0; i < 360; i++) {
+      times.push(t);
+      t += 60 / 83;
+    }
+    // 最后 16 拍从 83 慢慢放慢到 55
+    for (let i = 0; i < 16; i++) {
+      times.push(t);
+      t += 60 / (83 - (28 * (i + 1)) / 16);
+    }
+    const m = buildBeatMap(jittered(times, 0.008, 6), { duration: t + 2 });
+    for (const x of times.slice(-14, -2)) {
+      const pos = beatPosition(m, x);
+      const p = beatTime(m, Math.round(pos) + 1) - beatTime(m, Math.round(pos));
+      expect(Math.abs(pos - Math.round(pos)) * p).toBeLessThan(0.03);
+    }
+  });
+
+  it('中间一段被识别成倍速：自动改回主段落的速度', () => {
+    const truth = uniform(140, 0.5, 280);
+    const ticks: number[] = [];
+    truth.forEach((t, i) => {
+      ticks.push(t);
+      if (i >= 100 && i < 150) ticks.push(t + 30 / 140);
+    });
+    const m = buildBeatMap(jittered(ticks, 0.006, 21), { duration: 125 });
+    const sections = tempoSections(m).filter((x) => x.endTime > 0 && x.startTime < 125);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.bpm).toBeCloseTo(140, 0);
+  });
+
+  it('中间一段被识别成半速：自动补回来', () => {
+    const truth = uniform(150, 0.5, 300);
+    const ticks = truth.filter((_, i) => i < 120 || i >= 180 || i % 2 === 0);
+    const m = buildBeatMap(jittered(ticks, 0.006, 8), { duration: 125 });
+    const sections = tempoSections(m).filter((x) => x.endTime > 0 && x.startTime < 125);
+    expect(sections).toHaveLength(1);
+    for (const t of truth.slice(10, -10)) {
+      const pos = beatPosition(m, t);
+      expect(Math.abs(pos - Math.round(pos)) * 0.4).toBeLessThan(0.012);
+    }
+  });
+
   it('速度慢慢漂移：局部拟合跟得上', () => {
     const truth: number[] = [];
     let t = 0.3;

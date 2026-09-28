@@ -46,14 +46,19 @@ export function BeatStrip({ buffer, map, downbeat, center, playing, span = 6 }: 
       const x = (t: number) => ((t - from) / span) * width;
       ctx.clearRect(0, 0, width, height);
 
-      const cols = Math.floor(width / 2);
+      // 每一列固定对应一段时间，滚动时只平移位置，不重新取样，柱子高度不会闪
+      const colW = 2;
+      const perCol = span / (width / colW);
+      const binsPerCol = Math.max(1, Math.round(perCol * PER_SECOND));
+      const colDur = binsPerCol / PER_SECOND;
       ctx.fillStyle = colors.wave;
-      for (let i = 0; i < cols; i++) {
-        const t = from + (i / cols) * span;
-        if (t < 0 || t > buffer.duration) continue;
-        const v = detail[Math.min(detail.length - 1, Math.floor(t * PER_SECOND))]!;
+      for (let c = Math.floor(Math.max(0, from) / colDur); ; c++) {
+        const t = c * colDur;
+        if (t > from + span || t > buffer.duration) break;
+        let v = 0;
+        for (let k = c * binsPerCol; k < (c + 1) * binsPerCol && k < detail.length; k++) v = Math.max(v, detail[k]!);
         const h = Math.max(1, v * (height / 2 - 8));
-        ctx.fillRect(i * 2, height / 2 - h, 1.5, h * 2);
+        ctx.fillRect(x(t), height / 2 - h, colW * 0.75, h * 2);
       }
 
       for (let i = firstBeatAtOrAfter(m, from); ; i++) {
